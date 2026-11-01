@@ -1,0 +1,17 @@
+// JSON and file I/O
+doc := %{
+    name: "Vela",
+    version: 1,
+    tags: ["lang", "math"],
+};
+js := json_stringify(doc);
+print("json:", js);
+back := json_parse(js);
+print("name from parse:", back.name);
+print("tags:", back.tags);
+
+path := "/tmp/vela_example_out.txt";
+write_file(path, "line1\nline2\n");
+append_file(path, "line3\n");
+print("file contents:");
+print(read_file(path));

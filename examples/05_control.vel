@@ -1,0 +1,15 @@
+// when / else, loop, bail, skip
+sign(n) ==> {
+    when n > 0 { -> "positive"; }
+    else when n < 0 { -> "negative"; }
+    else { -> "zero"; }
+};
+print(sign(3), sign(-1), sign(0));
+
+// skip (continue) and bail (break)
+print("odds below 10:");
+repeat i from 0 through 10 {
+    when i % 2 == 0 { skip; }
+    print(i);
+    when i >= 7 { bail; }
+}

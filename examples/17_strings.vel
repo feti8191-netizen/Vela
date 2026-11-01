@@ -1,0 +1,11 @@
+// Strings, interpolation, regex
+lang := "Vela";
+print("Hello, ${lang}!");
+print("chars", chars("hi"));
+print("trim", trim("  spaced  "));
+print("replace", replace("foo bar foo", "foo", "baz"));
+print("starts/ends", starts_with("hello", "he"), ends_with("hello", "lo"));
+
+print("re_match digits?", re_match("\\d+", "ab12cd"));
+print("re_find_all words", re_find_all("\\w+", "one two 3"));
+print("re_replace spaces", re_replace("\\s+", "a  b   c", "-"));

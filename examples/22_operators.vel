@@ -1,0 +1,10 @@
+// Arithmetic, comparison, logic, ternary
+print(1 + 2 * 3, (1 + 2) * 3);
+print(2 ** 8);
+print(10 % 3);
+print(5 > 3 && 2 < 4);
+print(false || true);
+print(!false);
+print(1 < 2 && 2 < 3);  // chained-style via &&
+x := 7;
+print(x > 10 ? "big" : "small");

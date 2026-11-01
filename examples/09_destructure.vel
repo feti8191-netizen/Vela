@@ -1,0 +1,18 @@
+// Array and map destructuring
+pair := [3, 4];
+[x, y] := pair;
+print("point", x, y, "hyp", sqrt(x ** 2 + y ** 2));
+
+nums := [1, 2, 3, 4, 5];
+[head, ...tail] := nums;
+print("head", head, "tail", tail);
+
+user := %{name: "Ada", role: "engineer"};
+%{"name": nm, "role": role} := user;
+print(nm, "is an", role);
+
+// For-loop destructuring
+print("pairs:");
+repeat [k, v] in [[1, "one"], [2, "two"]] {
+    print(k, "->", v);
+}

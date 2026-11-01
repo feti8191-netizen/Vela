@@ -1,0 +1,20 @@
+// Bitwise ops, is, assert, tuples, ??
+print("5 & 3 =", 5 & 3);
+print("5 | 2 =", 5 | 2);
+print("5 ^ 1 =", 5 ^ 1);
+print("~0 =", ~0);
+print("1 << 4 =", 1 << 4);
+print("16 >> 2 =", 16 >> 2);
+
+print("42 is num?", 42 is num);
+print("\"hi\" is str?", "hi" is str);
+print("true is bool?", true is bool);
+print("nil is nil?", nil is nil);
+
+assert 1 + 1 == 2;
+assert true, "ok";
+
+t := (10, "ten", true);
+print("tuple", t, "t[1]=", t[1]);
+print("nil ?? 99 =", nil ?? 99);
+print("0 ?? 99 =", 0 ?? 99);

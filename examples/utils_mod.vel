@@ -1,0 +1,4 @@
+// Helper module for import demo
+VERSION := "1.0.0";
+double(x) ==> x * 2;
+area_circle(r) ==> PI * r * r;

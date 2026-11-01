@@ -1,0 +1,16 @@
+// Subjectless match (cond-style)
+score := 87;
+grade := match {
+    score >= 90 => "A",
+    score >= 80 => "B",
+    score >= 70 => "C",
+    _ => "F",
+};
+print("score", score, "grade", grade);
+
+n := 0;
+print(match {
+    n > 0 => "positive",
+    n < 0 => "negative",
+    _ => "zero",
+});

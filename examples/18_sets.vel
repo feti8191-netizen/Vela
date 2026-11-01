@@ -1,0 +1,16 @@
+// Sets and set algebra
+primes := #{2, 3, 5, 7, 11};
+print(primes);
+print("has 5?", set_has(primes, 5));
+print("has 4?", set_has(primes, 4));
+set_add(primes, 13);
+print("after add 13, has 13?", set_has(primes, 13));
+set_remove(primes, 2);
+print("after remove 2, has 2?", set_has(primes, 2));
+
+a := #{1, 2, 3};
+b := #{3, 4, 5};
+print("union has 1?", set_has(set_union(a, b), 1));
+print("intersect has 3?", set_has(set_intersect(a, b), 3));
+print("difference has 1?", set_has(set_difference(a, b), 1));
+print("difference has 3?", set_has(set_difference(a, b), 3));

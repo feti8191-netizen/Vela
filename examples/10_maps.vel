@@ -1,0 +1,13 @@
+// Map literals (shorthand + quoted), field access, optional chaining
+cfg := %{
+    host: "localhost",
+    port: 8080,
+    debug: true,
+};
+print(cfg.host + ":" + str(cfg.port));
+cfg.port <- 9090;
+print("new port", cfg.port);
+
+empty := %{};
+print("missing?.x =", empty.missing?.x);
+print("nil coal", empty.missing ?? "default");

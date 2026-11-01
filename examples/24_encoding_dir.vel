@@ -1,0 +1,5 @@
+// Encoding + list_dir
+print("base64(hi) =", base64_encode("hi"));
+print("hex(hi) =", hex_encode("hi"));
+names := list_dir("examples");
+print("examples entries:", len(names));

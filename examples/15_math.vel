@@ -1,0 +1,12 @@
+// Math library tour
+print("PI =", PI, "E =", E);
+print("sin(PI/2) =", sin(PI / 2));
+print("hypot 3-4-5 =", sqrt(3 ** 2 + 4 ** 2));
+print("2**10 =", 2 ** 10);
+print("gcd(48,18) =", gcd(48, 18));
+print("lcm(4,6) =", lcm(4, 6));
+print("primes among 15..20:");
+repeat n from 15 through 20 {
+    when is_prime(n) { print(n); }
+}
+print("abs/floor/ceil/round:", abs(-2.5), floor(2.7), ceil(2.2), round(2.5));

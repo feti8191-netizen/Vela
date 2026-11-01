@@ -1,0 +1,27 @@
+// throw / try / catch / defer
+safe_div(a, b) ==> {
+    when b == 0 { throw "division by zero"; }
+    -> a / b;
+};
+
+print(safe_div(10, 2));
+try {
+    print(safe_div(1, 0));
+} catch e {
+    print("caught:", e);
+}
+
+try {
+    throw 404;
+} catch {
+    print("caught without binding");
+}
+
+// defer runs on the way out (including after return)
+trace() ==> {
+    print("enter");
+    defer print("leave");
+    print("work");
+    -> "done";
+};
+print("result =", trace());

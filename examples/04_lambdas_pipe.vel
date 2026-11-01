@@ -1,0 +1,10 @@
+// Lambdas and the pipe operator
+double(x) ==> x * 2;
+inc(x) ==> x + 1;
+
+print(5 |> double);
+print(5 |> double |> inc);
+print(3 |> ((x) ==> x ** 3));
+
+nums := [1, 2, 3, 4, 5];
+print(map(nums, (n) ==> n * n));

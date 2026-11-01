@@ -1,0 +1,13 @@
+// until and unless
+n <- 0;
+until n >= 5 {
+    print("n =", n);
+    n <- n + 1;
+}
+
+ready <- false;
+unless ready {
+    print("not ready yet — flipping flag");
+    ready <- true;
+}
+print("ready?", ready);

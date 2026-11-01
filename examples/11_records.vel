@@ -1,0 +1,16 @@
+// Records: declare, construct, fields, type test
+record Point { x: num, y: num, }
+record Circle { radius: num, }
+
+p := new Point{x: 3, y: 4};
+print(p);
+print("x =", p.x, "y =", p.y);
+p.x <- 6;
+print("moved x ->", p.x);
+print("p is Point?", p is Point);
+print("p is Circle?", p is Circle);
+
+// Method sugar: store function on the record-like map
+dist(self) ==> sqrt(self.x ** 2 + self.y ** 2);
+p2 := %{x: 3, y: 4, dist: dist};
+print("distance =", p2.dist());

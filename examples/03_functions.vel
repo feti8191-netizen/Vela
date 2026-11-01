@@ -1,0 +1,11 @@
+// Named functions, return arrow, defaults, named args
+greet(who, greeting := "Hello") ==> {
+    -> greeting + ", " + who + "!";
+};
+print(greet("Ada"));
+print(greet("Bob", "Hi"));
+print(greet(who := "Grace", greeting := "Hey"));
+
+// Typed-ish params and return annotation (checked at runtime when given)
+square(n: num) : num ==> n * n;
+print("7² =", square(7));

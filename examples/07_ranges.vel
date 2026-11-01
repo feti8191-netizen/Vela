@@ -1,0 +1,15 @@
+// Ranges: to (exclusive), through (inclusive), by step
+print("0 to 5:");
+repeat i in (0 to 5) { print(i); }
+
+print("1 through 5:");
+repeat i in (1 through 5) { print(i); }
+
+print("0 to 10 by 2:");
+repeat i in (0 to 10 by 2) { print(i); }
+
+print("10 through 0 by -3:");
+repeat i in (10 through 0 by -3) { print(i); }
+
+r := 1 to 4;
+print("len of 1 to 4 =", len(r));

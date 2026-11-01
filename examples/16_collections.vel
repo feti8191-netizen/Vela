@@ -1,0 +1,19 @@
+// Collection helpers
+nums := [3, 1, 4, 1, 5, 9, 2, 6];
+print("sorted", sorted(nums));
+print("unique", unique(nums));
+print("sum", sum(nums));
+print("map *2", map(nums, (x) ==> x * 2));
+print("filter even", filter(nums, (x) ==> x % 2 == 0));
+print("any > 8?", any(nums, (x) ==> x > 8));
+print("all > 0?", all(nums, (x) ==> x > 0));
+print("flatten", flatten([[1, 2], [3], 4]));
+print("chunks 3", chunks(nums, 3));
+print("windows 3", windows([1, 2, 3, 4, 5], 3));
+print("zip", zip([1, 2, 3], ["a", "b", "c"]));
+print("enumerate", enumerate(["x", "y"]));
+[evens, odds] := partition(nums, (x) ==> x % 2 == 0);
+print("evens", evens, "odds", odds);
+
+parity(x) ==> x % 2 == 0 ? "even" : "odd";
+print("group_by parity", group_by(nums, parity));

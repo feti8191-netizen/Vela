@@ -1,0 +1,29 @@
+// Enums and pattern matching
+enum Status { Ok, Warn, Error }
+
+describe(s) ==> match s {
+    Status.Ok => "all good",
+    Status.Warn => "careful",
+    Status.Error => "failed",
+    _ => "unknown",
+};
+print(describe(Status.Ok));
+print(describe(Status.Error));
+print("Ok is Status?", Status.Ok is Status);
+
+// Match with guards, lists, maps
+classify(v) ==> match v {
+    0 => "zero",
+    n when n < 0 => "negative",
+    n when n > 100 => "huge",
+    [x] => "singleton " + str(x),
+    [a, b] => "pair " + str(a) + "," + str(b),
+    [h, ...t] => "list head=" + str(h) + " rest=" + str(len(t)),
+    %{kind: "user", name: n} => "user:" + n,
+    _ => "other",
+};
+print(classify(0));
+print(classify(-5));
+print(classify([42]));
+print(classify([1, 2, 3]));
+print(classify(%{kind: "user", name: "Ada"}));

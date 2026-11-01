@@ -1,0 +1,5 @@
+// Import module (relative to this file's directory)
+import "utils_mod.vel" as u;
+print("module version", u.VERSION);
+print("double 21 =", u.double(21));
+print("area r=2 =", u.area_circle(2));

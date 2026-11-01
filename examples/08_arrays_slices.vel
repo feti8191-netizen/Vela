@@ -1,0 +1,13 @@
+// Arrays, indexing, slices, spread, slice assignment
+letters := ["a", "b", "c", "d", "e"];
+print(letters[0], letters[-1]);
+print("slice 1:4 =", letters[1:4]);
+print("reverse =", letters[::-1]);
+print("step 2 =", letters[::2]);
+
+more := [...letters, "f", "g"];
+print("spread =", more);
+
+buf <- [10, 20, 30, 40, 50];
+buf[1:4] <- [99];
+print("after slice assign =", buf);
