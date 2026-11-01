@@ -221,8 +221,11 @@ print(buf);           // [1, 9, 8, 5]
 ### Spread and interpolation
 
 ```vela
+a := ["a", "b", "c"];
 more := [...a, "f"];
-print("Hello, ${"Vela"}!");
+print(more);
+lang := "Vela";
+print("Hello, ${lang}!");
 ```
 
 ---
@@ -242,10 +245,19 @@ sign(n) ==> {
 ### unless / until
 
 ```vela
+ready <- false;
+setup() ==> { print("setup"); ready <- true; };
 unless ready {
     setup();
 }
 
+done <- false;
+n <- 0;
+step() ==> {
+    n <- n + 1;
+    print("step", n);
+    when n >= 3 { done <- true; }
+};
 until done {
     step();
 }
@@ -441,13 +453,23 @@ work() ==> {
 
 ## Modules
 
-```vela
-// utils.vel
-VERSION := "1.0";
-double(x) ==> x * 2;
+Modules are two files. Example layout under `examples/`:
 
-// main.vel
-import "utils.vel" as u;
+```vela
+// examples/utils_mod.vel
+VERSION := "1.0.0";
+double(x) ==> x * 2;
+```
+
+Run the real example file:
+
+```bash
+./vela examples/21_modules.vel
+```
+
+```
+// examples/21_modules.vel
+import "utils_mod.vel" as u;
 print(u.VERSION);
 print(u.double(21));
 ```
@@ -459,6 +481,8 @@ Imports are cached; the same path shares one module environment.
 ## Type tests and assertions
 
 ```vela
+record Point { x: num, y: num, }
+p := new Point{x: 1, y: 2};
 print(42 is num);
 print("hi" is str);
 print(p is Point);
@@ -934,7 +958,8 @@ repeat c in temps_c {
 **Variant with filtering**
 
 ```vela
-// Only show temperatures at or below freezing
+to_f(c) ==> c * 9 / 5 + 32;
+temps_c := [-10, 0, 15, 22];
 print("Freezing or below:");
 repeat c in temps_c {
     when c <= 0 {
@@ -1032,8 +1057,16 @@ print("popped", value, "remaining", s);
 **Same pop with destructuring**
 
 ```vela
+empty() ==> [];
+push(stack, value) ==> [...stack, value];
+pop(stack) ==> {
+    when len(stack) == 0 { throw "empty"; }
+    -> [stack[-1], stack[0:len(stack)-1]];
+};
 s <- push(push(empty(), 1), 2);
-[top, s] := pop(s);
+pair := pop(s);
+top := pair[0];
+s <- pair[1];
 print(top);    // 2
 print(s);      // [1]
 ```
@@ -1072,6 +1105,9 @@ print("total", total);   // 2²+4²+…+10² = 220
 **Same idea with nested calls**
 
 ```vela
+raw := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+is_even(n) ==> n % 2 == 0;
+square(n) ==> n * n;
 print(sum(map(filter(raw, is_even), square)));
 ```
 

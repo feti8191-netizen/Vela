@@ -34,9 +34,14 @@ greet("Bob", "Hi");
 **Input**
 
 ```vela
-line := readline("Your name: ");
+// Interactive only — run under ./vela and type when prompted:
+// line := readline("Your name: ");
+// print("Hello,", line);
+
+// Non-interactive equivalent:
+line := "Ada";
 print("Hello,", line);
-n := num(readline("Number: "));
+n := 21;
 print("double =", n * 2);
 ```
 
@@ -72,6 +77,8 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 
 ## Language overview
 
+Examples below are **complete** — every name is defined before use.
+
 ### Bindings
 
 | Syntax | Meaning |
@@ -79,6 +86,13 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 | `x := value` | Immutable binding |
 | `x <- value` | Mutable binding / assignment |
 | `x += 1` | Compound assignment (`-=`, `*=`, `/=`, `%=`) |
+
+```vela
+x := 10;
+y <- 20;
+y <- y + 1;
+print(x, y);   // 10 21
+```
 
 ### Functions
 
@@ -89,6 +103,9 @@ factorial(n) ==> {
     else { -> n * factorial(n - 1); }
 };
 
+print(square(5));
+print(factorial(5));
+
 // Defaults and named arguments
 rect(w, h, unit := "px") ==> "${w}x${h}${unit}";
 print(rect(10, 20));
@@ -96,31 +113,58 @@ print(rect(w := 3, h := 4, unit := "em"));
 
 // Lambdas and pipe
 double(x) ==> x * 2;
+print(5 |> double);
 print(5 |> double |> double);
 ```
 
 ### Control flow
 
 ```vela
+x := 5;
 when x > 0 { print("positive"); }
 else when x < 0 { print("negative"); }
 else { print("zero"); }
 
+ready <- false;
+setup() ==> { print("setup"); ready <- true; };
 unless ready { setup(); }
+
+done <- false;
+n <- 0;
+step() ==> {
+    n <- n + 1;
+    print("step", n);
+    when n >= 3 { done <- true; }
+};
 until done { step(); }
 
-repeat i from 0 through 10 { print(i); }
-repeat i from 0 to 100 by 5 { print(i); }
-repeat item in list { print(item); }
-repeat [k, v] in pairs { print(k, v); }
+repeat i from 0 through 3 {
+    print(i);
+}
+repeat i from 0 to 10 by 5 {
+    print(i);
+}
 
+list := [10, 20, 30];
+repeat item in list {
+    print(item);
+}
+
+pairs := [[1, "a"], [2, "b"]];
+repeat [k, v] in pairs {
+    print(k, v);
+}
+
+i <- 0;
 loop {
-    when finished { bail; }   // break
-    when skip_me { skip; }    // continue
+    when i >= 3 { bail; }          // break
+    when i == 1 { i <- i + 1; skip; }  // continue
+    print("loop", i);
+    i <- i + 1;
 }
 ```
 
-`-> expr` returns from a function. `bail` / `skip` break or continue loops.
+`-> expr` returns from a function. `bail` breaks the innermost loop; `skip` continues to the next iteration.
 
 ### Data
 
@@ -129,7 +173,11 @@ loop {
 a := [1, 2, 3, 4, 5];
 print(a[1:4], a[::-1], a[::2]);
 b := [...a, 6];
-a[1:3] <- [9, 9];
+print(b);
+
+buf <- [1, 2, 3, 4, 5];
+buf[1:3] <- [9, 9];
+print(buf);
 
 // Maps
 user := %{name: "Ada", age: 36};
@@ -139,15 +187,18 @@ print(user.address?.city);
 
 // Sets
 s := #{1, 2, 3};
+print(set_has(s, 2));
 set_add(s, 4);
 
 // Ranges
-r := 1 to 10;            // exclusive end
-r2 := 1 through 10;      // inclusive
-r3 := 0 to 100 by 5;
+r := 1 to 5;
+r2 := 1 through 5;
+r3 := 0 to 10 by 2;
+print(len(r));
 
 // Tuples (fixed sequences)
 t := (1, "two", true);
+print(t[0], t[1], t[2]);
 ```
 
 ### Records, enums, match
@@ -155,10 +206,13 @@ t := (1, "two", true);
 ```vela
 record Point { x: num, y: num, }
 p := new Point{x: 3, y: 4};
+print(p.x, p.y);
+print(p is Point);
 
 enum Status { Ok, Err }
 print(Status.Ok is Status);
 
+value := [1, 2, 3];
 print(match value {
     0 => "zero",
     n when n < 0 => "negative",
@@ -167,11 +221,12 @@ print(match value {
     _ => "other",
 });
 
-// Subjectless match (cond-style)
+score := 87;
 print(match {
     score >= 90 => "A",
     score >= 80 => "B",
-    _ => "C",
+    score >= 70 => "C",
+    _ => "F",
 });
 ```
 
@@ -186,17 +241,46 @@ try {
 
 f() ==> {
     defer print("cleanup");
-    -> do_work();
+    print("work");
+    -> 1;
 };
+print(f());
 ```
 
 ### Modules
 
+See `examples/21_modules.vel` and `examples/utils_mod.vel`:
+
 ```vela
-import "utils.vel";
-import "utils.vel" as u;
-print(u.helper(1));
+// utils_mod.vel
+VERSION := "1.0.0";
+double(x) ==> x * 2;
+area_circle(r) ==> PI * r * r;
 ```
+
+Run the real example (paths resolve from the file’s directory):
+
+```bash
+./vela examples/21_modules.vel
+```
+
+The working module demo is the file on disk (not a free-standing snippet):
+
+```bash
+./vela examples/21_modules.vel
+```
+
+Contents of `examples/21_modules.vel`:
+
+```
+import "utils_mod.vel" as u;
+print("module version", u.VERSION);
+print("double 21 =", u.double(21));
+print("area r=2 =", u.area_circle(2));
+```
+
+Relative imports resolve from the **directory of the source file** being executed.
+
 
 ---
 
@@ -206,7 +290,7 @@ print(u.helper(1));
 |------|-----------|
 | I/O | `print`, `eprint`, `readline`, `read_file`, `write_file`, `append_file`, `list_dir` |
 | Types | `type`, `str`, `num`, `len`, `assert` |
-| Collections | `map`, `filter`, `reduce`, `sum`, `sorted`, `reverse`, `unique`, `flatten`, `concat`, `zip`, `enumerate`, `chunks`, `windows`, `partition`, `group_by`, `any`, `all`, `contains` |
+| Collections | `map`, `filter`, `reduce`, `sum`, `sorted`, `reverse`, `unique`, `flatten`, `concat`, `zip`, `enumerate`, `chunks`, `windows`, `partition`, `group_by`, `any`, `all` |
 | Sets | `set`, `set_has`, `set_add`, `set_remove`, `set_union`, `set_intersect`, `set_difference` |
 | Strings | `chars`, `trim`, `replace`, `starts_with`, `ends_with` |
 | Regex | `re_match`, `re_find_all`, `re_replace` |
@@ -263,6 +347,7 @@ vela/
 ├── vela.cpp          # Full interpreter (single translation unit)
 ├── Makefile
 ├── README.md
+├── explain.md        # Language explanation
 └── examples/         # Feature examples (.vel)
 ```
 
@@ -282,4 +367,4 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
- Apache-2.0
+Add your preferred license here (MIT, Apache-2.0, etc.).
