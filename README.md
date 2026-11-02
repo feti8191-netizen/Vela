@@ -80,19 +80,25 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 
 Examples below are **complete** — every name is defined before use.
 
-### Bindings
+### Bindings (`:=` vs `<-`)
 
-| Syntax | Meaning |
-|--------|---------|
-| `x := value` | Immutable binding |
-| `x <- value` | Mutable binding / assignment |
-| `x += 1` | Compound assignment (`-=`, `*=`, `/=`, `%=`) |
+| Syntax | Meaning | Can change later? |
+|--------|---------|-------------------|
+| `x := value` | Create **once** (fixed) | No |
+| `x <- value` | Create or **update** | Yes |
+| `x += 1` | Update (needs existing mutable `x`) | — |
+
+**Rule:** if the value will change, always start with `<-`. Use `:=` only for names that stay fixed.
 
 ```vela
-x := 10;
-y <- 20;
-y <- y + 1;
-print(x, y);   // 10 21
+name := "Vela";     // fixed — do not reassign
+count <- 0;         // changeable
+count <- count + 1;
+print(name, count);
+
+// Wrong:  x := 1; x := 2;     (:= only once)
+// Wrong:  x := 1; x <- 2;     (:= made it fixed)
+// Right:  x <- 1; x <- 2;
 ```
 
 ### Functions
@@ -368,4 +374,4 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
- Apache-2.0
+Add your preferred license here (MIT, Apache-2.0, etc.).

@@ -1053,7 +1053,7 @@ static Value indexGet(const Value& obj, const Value& idx, int line) {
         long long i = toIndex(idx.n, line);
         long long n = static_cast<long long>(obj.arr->size());
         if (i < 0) i += n;
-        if (i < 0 || i >= n) throw RuntimeError(line, "array index out of bounds");
+        if (i < 0 || i >= n) throw RuntimeError(line, "array index out of bounds (valid indices are 0 .. length-1, or negative from the end)");
         return (*obj.arr)[static_cast<size_t>(i)];
     }
     if (obj.kind == Value::Kind::Str) {
@@ -1079,7 +1079,7 @@ static void indexSet(Value& obj, const Value& idx, const Value& val, int line) {
         long long i = toIndex(idx.n, line);
         long long n = static_cast<long long>(obj.arr->size());
         if (i < 0) i += n;
-        if (i < 0 || i >= n) throw RuntimeError(line, "array index out of bounds");
+        if (i < 0 || i >= n) throw RuntimeError(line, "array index out of bounds (valid indices are 0 .. length-1, or negative from the end)");
         (*obj.arr)[static_cast<size_t>(i)] = val;
         return;
     }
@@ -1098,7 +1098,7 @@ Value LiteralExpr::eval(const EnvPtr&, Interpreter&) { return value; }
 
 Value VarExpr::eval(const EnvPtr& env, Interpreter&) {
     Value* v = env->lookup(name);
-    if (!v) throw RuntimeError(line, "undefined variable '" + name + "'");
+    if (!v) throw RuntimeError(line, "undefined variable '" + name + "' — create it first with := (fixed) or <- (changeable)");
     return *v;
 }
 
@@ -1106,7 +1106,7 @@ Value AssignExpr::eval(const EnvPtr& env, Interpreter& I) {
     std::string bop = op.substr(0, op.size() - 1);
     if (auto ve = dynamic_cast<VarExpr*>(target.get())) {
         Env* owner = env->owner(ve->name);
-        if (!owner) throw RuntimeError(line, "undefined variable '" + ve->name + "'");
+        if (!owner) throw RuntimeError(line, "undefined variable '" + ve->name + "' — create it first with := (fixed) or <- (changeable)");
         if (owner->consts.count(ve->name)) {
             throw RuntimeError(line, "cannot assign to immutable variable '" + ve->name + "'");
         }
@@ -1495,7 +1495,7 @@ Value MatchExpr::eval(const EnvPtr& env, Interpreter& I) {
         if (arm.body) return arm.body->eval(binds, I);
         return Value::Nil();
     }
-    throw RuntimeError(line, "no matching arm in match expression");
+    throw RuntimeError(line, "no matching arm in match — add a final _ => ... arm to cover remaining cases");
 }
 
 Value ArrayExpr::eval(const EnvPtr& env, Interpreter& I) {
@@ -1587,14 +1587,22 @@ Value BindStmt::exec(const EnvPtr& env, Interpreter& I) {
     if (auto ve = dynamic_cast<VarExpr*>(target.get())) {
         if (op == ":=") {
             if (env->vars.count(ve->name)) {
-                throw RuntimeError(line, "variable '" + ve->name + "' already bound in this scope");
+                bool wasConst = env->consts.count(ve->name) > 0;
+                throw RuntimeError(line,
+                    "cannot use := on '" + ve->name + "' again — name already exists in this scope"
+                    + (wasConst ? " as immutable" : "") + ". "
+                    "Rule: := creates a name once (fixed). To change a value, create it with <- then update with <-. "
+                    "Example: count <- 0; count <- count + 1;");
             }
             env->define(ve->name, v, true);
         } else {
             Env* owner = env->owner(ve->name);
             if (owner) {
                 if (owner->consts.count(ve->name)) {
-                    throw RuntimeError(line, "cannot assign to immutable variable '" + ve->name + "'");
+                    throw RuntimeError(line,
+                        "cannot change '" + ve->name + "' — it was created with := (immutable). "
+                        "Use <- when you first create it if it needs to change. "
+                        "Example: score <- 0; score <- score + 1;  (not score := 0)");
                 }
                 owner->vars[ve->name] = v;
             } else {
@@ -1932,7 +1940,7 @@ Value Interpreter::call(const Value& callee, std::vector<Value>& args, int line)
         return callee.native->fn(args);
     }
     if (callee.kind != Value::Kind::Func) {
-        throw RuntimeError(line, "value of type " + typeName(callee) + " is not callable");
+        throw RuntimeError(line, "cannot call a value of type " + typeName(callee) + " (need a function)");
     }
 
     auto fn = callee.func;
@@ -2068,7 +2076,7 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
                 if (idx != v.s.size()) throw std::invalid_argument("trailing");
                 return Value::Num(d);
             } catch (...) {
-                throw RuntimeError(0, "cannot convert string '" + v.s + "' to number");
+                throw RuntimeError(0, "cannot convert '" + v.s + "' to number (use try_num(...) if you want nil instead of an error)");
             }
         }
         throw RuntimeError(0, "cannot convert " + typeName(v) + " to number");

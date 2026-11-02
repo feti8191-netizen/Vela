@@ -60,21 +60,35 @@ assert 3.0 == 3;
 
 ## Bindings and mutation
 
-Vela separates **definition** from **assignment**.
+Vela separates **create once** from **create or update**. This is the most common source of beginner errors.
 
-| Form | Meaning |
-|------|---------|
-| `name := value` | Immutable binding — cannot reassign that name |
-| `name <- value` | Mutable binding — create or update |
-| `name += 1` | Compound update (also `-=`, `*=`, `/=`, `%=`) |
+| Form | Meaning | Can change later? |
+|------|---------|-------------------|
+| `name := value` | Create once (immutable) | No |
+| `name <- value` | Create or update (mutable) | Yes |
+| `name += 1` | Compound update | Only if name is mutable |
+
+**Rule of thumb:** if it will change, use `<-` from the first line. Use `:=` only for constants and fixed names.
 
 ```vela
-pi := 3.14159;       // fixed name
-counter <- 0;        // may change
+pi := 3.14159;       // fixed — never reassign
+counter <- 0;        // will change
 counter <- counter + 1;
 counter += 1;
 
-// pi <- 3;          // error: cannot assign to immutable variable
+// Errors:
+// pi <- 3;          // was created with :=
+// counter := 5;     // name already exists — use <-
+// x := 1; x := 2;   // := only once per scope
+```
+
+```vela
+// Correct update loop
+total <- 0;
+repeat i from 1 through 5 {
+    total <- total + i;
+}
+print(total);   // 15
 ```
 
 Scopes nest. Inner names may shadow outer ones. Closures see the environment where they were created, including later updates to mutable cells.

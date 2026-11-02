@@ -1,8 +1,19 @@
-// Immutable := and mutable <-
-name := "Vela";
-version <- 1;
-version <- version + 1;
-print("Language:", name, "v" + str(version));
+// Bindings: := (fixed) vs <- (changeable)
+// Rule: if it will change, use <- from the start.
 
-// Cannot rebind immutable — this would error:
-// name := "other";
+name := "Vela";
+print("name:", name);
+
+count <- 0;
+count <- count + 1;
+count <- count + 1;
+print("count:", count);
+
+// Compound update (mutable only)
+score <- 10;
+score += 5;
+print("score:", score);
+
+// These would error — uncomment to see clear messages:
+// name <- "other";     // name was created with :=
+// count := 99;         // count already exists; use <-
