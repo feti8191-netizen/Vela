@@ -374,4 +374,4 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
-Add your preferred license here (MIT, Apache-2.0, etc.).
+ Apache-2.0
