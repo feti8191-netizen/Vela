@@ -765,7 +765,7 @@ print(p);
 
 ```vela
 parse_positive(s) ==> {
-    n := num(s);
+    n := try_num(s);
     when n == nil { throw "not a number"; }
     when n <= 0 { throw "must be positive"; }
     -> n;
@@ -1303,7 +1303,7 @@ read_score(prompt, lo, hi, fallback) ==> {
 **What this does**
 
 1. `readline` returns a string or `nil` at end-of-input.
-2. `num` converts text; failed conversion yields `nil` in typical use as a signal.
+2. Prefer `try_num` for input: it returns `nil` on failure. Strict `num` throws a runtime error on bad strings.
 3. Range checks use logical `||`.
 4. Every failure path still returns a usable number so the caller stays simple.
 

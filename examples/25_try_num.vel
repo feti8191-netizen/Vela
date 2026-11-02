@@ -1,0 +1,21 @@
+// Soft number conversion with try_num
+print(try_num("42"));
+print(try_num("nope"));
+print(try_num(""));
+
+n := try_num("10");
+m := try_num("2");
+when n == nil || m == nil {
+    print("bad input");
+}
+else {
+    print("sum", n + m);
+    print("product", n * m);
+}
+
+// Strict num still errors on bad input
+try {
+    num("x");
+} catch {
+    print("num throws on bad string");
+}

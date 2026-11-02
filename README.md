@@ -70,6 +70,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 | `./vela file.vel` | Run a source file |
 | `./vela --tokens file.vel` | Dump lexer tokens |
 | `./vela --help` | Show help |
+| `./vela --version` | Print version |
 
 **REPL commands:** `.help` · `.vars` · `.clear` · `exit`
 
@@ -289,10 +290,10 @@ Relative imports resolve from the **directory of the source file** being execute
 | Area | Functions |
 |------|-----------|
 | I/O | `print`, `eprint`, `readline`, `read_file`, `write_file`, `append_file`, `list_dir` |
-| Types | `type`, `str`, `num`, `len`, `assert` |
+| Types | `type`, `str`, `num`, `try_num`, `len`, `assert`, `contains` |
 | Collections | `map`, `filter`, `reduce`, `sum`, `sorted`, `reverse`, `unique`, `flatten`, `concat`, `zip`, `enumerate`, `chunks`, `windows`, `partition`, `group_by`, `any`, `all` |
 | Sets | `set`, `set_has`, `set_add`, `set_remove`, `set_union`, `set_intersect`, `set_difference` |
-| Strings | `chars`, `trim`, `replace`, `starts_with`, `ends_with` |
+| Strings | `chars`, `trim`, `replace`, `starts_with`, `ends_with`, `join`, `split` |
 | Regex | `re_match`, `re_find_all`, `re_replace` |
 | JSON | `json_parse`, `json_stringify` |
 | Encoding | `base64_encode`, `hex_encode` |
@@ -367,4 +368,4 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
-Apache-2.0
+Add your preferred license here (MIT, Apache-2.0, etc.).

@@ -2015,18 +2015,39 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         const Value& v = args[0];
         if (v.kind == Value::Kind::Str) return Value::Num(static_cast<double>(v.s.size()));
         if (v.kind == Value::Kind::Arr) return Value::Num(static_cast<double>(v.arr->size()));
-        if (v.kind == Value::Kind::Map) return Value::Num(static_cast<double>(v.map->size()));
+        if (v.kind == Value::Kind::Map) {
+            // Sets store a "__set" marker; records store "__record" — don't count markers
+            size_t n = v.map->size();
+            if (v.map->count("__set")) n--;
+            if (v.map->count("__record")) n--;
+            return Value::Num(static_cast<double>(n));
+        }
         if (v.kind == Value::Kind::Range) {
             double s = v.rangeStart, e = v.rangeEnd;
-            if (v.rangeIncl) return Value::Num(std::max(0.0, std::floor(e - s) + 1));
-            return Value::Num(std::max(0.0, std::floor(e - s)));
+            double st = v.rangeStep == 0 ? 1.0 : v.rangeStep;
+            if (st > 0) {
+                if (s > e || (!v.rangeIncl && s == e)) return Value::Num(0);
+                double last = v.rangeIncl ? e : e - 1e-12;
+                return Value::Num(std::max(0.0, std::floor((last - s) / st) + 1));
+            } else {
+                if (s < e || (!v.rangeIncl && s == e)) return Value::Num(0);
+                double last = v.rangeIncl ? e : e + 1e-12;
+                return Value::Num(std::max(0.0, std::floor((s - last) / (-st)) + 1));
+            }
         }
-        throw RuntimeError(0, "len expects a string, array, map, or range");
+        throw RuntimeError(0, "len expects a string, array, map, set, or range");
     });
 
     def("type", [](std::vector<Value>& args) -> Value {
         if (args.size() != 1) throw RuntimeError(0, "type expects 1 argument");
-        return Value::Str(typeName(args[0]));
+        const Value& v = args[0];
+        if (v.kind == Value::Kind::Map && v.map->count("__set")) return Value::Str("set");
+        if (v.kind == Value::Kind::Map && v.map->count("__record")) {
+            auto it = v.map->find("__record");
+            if (it != v.map->end() && it->second.kind == Value::Kind::Str)
+                return Value::Str(it->second.s);
+        }
+        return Value::Str(typeName(v));
     });
 
     def("str", [](std::vector<Value>& args) -> Value {
@@ -2051,6 +2072,28 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
             }
         }
         throw RuntimeError(0, "cannot convert " + typeName(v) + " to number");
+    });
+
+    // Soft conversion: returns nil instead of throwing on failure
+    def("try_num", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1) throw RuntimeError(0, "try_num expects 1 argument");
+        const Value& v = args[0];
+        if (v.kind == Value::Kind::Num) return v;
+        if (v.kind == Value::Kind::Bool) return Value::Num(v.b ? 1.0 : 0.0);
+        if (v.kind == Value::Kind::Nil) return Value::Nil();
+        if (v.kind == Value::Kind::Str) {
+            if (v.s.empty()) return Value::Nil();
+            try {
+                size_t idx = 0;
+                double d = std::stod(v.s, &idx);
+                while (idx < v.s.size() && std::isspace(static_cast<unsigned char>(v.s[idx]))) idx++;
+                if (idx != v.s.size()) return Value::Nil();
+                return Value::Num(d);
+            } catch (...) {
+                return Value::Nil();
+            }
+        }
+        return Value::Nil();
     });
 
     def("bool", [](std::vector<Value>& args) -> Value {
@@ -2282,7 +2325,15 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         if (args[0].kind == Value::Kind::Str && args[1].kind == Value::Kind::Str) {
             return Value::Bool(args[0].s.find(args[1].s) != std::string::npos);
         }
-        throw RuntimeError(0, "contains expects an array or string");
+        if (args[0].kind == Value::Kind::Map) {
+            if (args[0].map->count("__set")) {
+                return Value::Bool(args[0].map->count(args[1].toString(false)) > 0);
+            }
+            if (args[1].kind == Value::Kind::Str)
+                return Value::Bool(args[0].map->count(args[1].s) > 0);
+            return Value::Bool(false);
+        }
+        throw RuntimeError(0, "contains expects an array, string, map, or set");
     });
 
     def("sorted", [](std::vector<Value>& args) -> Value {
@@ -4095,11 +4146,15 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--tokens") dumpTokens = true;
-        else if (a == "--help" || a == "-h") {
+        else if (a == "--version" || a == "-V") {
+            std::cout << "Vela 1.0.0\n";
+            return 0;
+        } else if (a == "--help" || a == "-h") {
             std::cout << "Vela language\n"
                       << "  vela [options] [file.vel]\n"
                       << "  vela                  interactive REPL\n"
                       << "  --tokens              dump lexer tokens and exit\n"
+                      << "  --version             print version and exit\n"
                       << "  --help                show this help\n";
             return 0;
         } else if (!a.empty() && a[0] != '-') {
