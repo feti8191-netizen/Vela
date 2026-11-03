@@ -2,10 +2,11 @@
 
 **Vela** is a small general-purpose programming language with its own syntax, implemented from scratch in portable **C++17**.
 
-It is not a Python or JavaScript dialect. Bindings, functions, and control flow use dedicated operators so the language reads distinctly while staying simple enough for scripting, math, and everyday automation.
+It is not a Python or JavaScript dialect. Bindings, mutation, functions, and control flow use dedicated forms so the language stays readable and distinct.
 
 ```bash
 g++ -std=c++17 -O2 -o vela vela.cpp
+# or: make
 ./vela examples/01_hello.vel
 ./vela                  # interactive REPL
 ```
@@ -15,12 +16,10 @@ g++ -std=c++17 -O2 -o vela vela.cpp
 ## Quick start
 
 ```vela
-// Variables
-name := "Vela";          // immutable
-count <- 0;              // mutable
+name := "Vela";          // immutable binding
+count <- 0;              // mutable binding
 count <- count + 1;
 
-// Functions
 add(a, b) ==> a + b;
 greet(who, greeting := "Hello") ==> {
     print("${greeting}, ${who}!");
@@ -28,35 +27,32 @@ greet(who, greeting := "Hello") ==> {
 
 print(add(2, 3));
 greet("Ada");
-greet("Bob", "Hi");
 ```
 
-**Input**
+**Safe number input**
 
 ```vela
-// Interactive only — run under ./vela and type when prompted:
-// line := readline("Your name: ");
-// print("Hello,", line);
-
-// Non-interactive equivalent:
-line := "Ada";
-print("Hello,", line);
-n := 21;
-print("double =", n * 2);
+n := try_num(readline("Number: "));
+when n == nil {
+    print("not a number");
+}
+else {
+    print("double =", n * 2);
+}
 ```
 
 ---
 
 ## Build
 
-Requirements: a C++17 compiler (`g++` or `clang++`).
+Requires a C++17 compiler (`g++` or `clang++`).
 
 ```bash
-make              # builds ./vela
+make
 make clean
 ```
 
-Or directly:
+Or:
 
 ```bash
 g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
@@ -67,87 +63,47 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 | Command | Meaning |
 |---------|---------|
 | `./vela` | Start the REPL |
-| `./vela file.vel` | Run a source file (interpreter) |
-| `./vela build file.vel -o name` | Compile to a **native binary** |
+| `./vela file.vel` | Run a script (interpreter) |
+| `./vela build file.vel -o name` | Package a standalone native binary |
 | `./vela --tokens file.vel` | Dump lexer tokens |
-| `./vela --help` | Show help |
 | `./vela --version` | Print version |
+| `./vela --help` | Show help |
 
-### Compile to a native binary
-
-Still supports running `.vel` directly. To ship a standalone program:
+### Standalone binaries
 
 ```bash
 ./vela build examples/01_hello.vel -o hello
-./hello                 # native binary — no .vel file needed at runtime
+./hello
 ```
 
-How it works today:
+This embeds your program with the runtime and compiles with `g++`. The result is a normal OS binary. Today the program body is still **interpreted** inside that binary (not full AOT machine-code generation).
 
-1. Your `.vel` source is **embedded** into a small generated C++ file  
-2. That file is compiled with the Vela **runtime** (`vela.cpp`) via `g++`  
-3. You get a normal OS binary (Linux ELF, macOS Mach-O; Windows `.exe` with MinGW)
-
-At run time the embedded source is still **interpreted** by the runtime (not lowered to per-statement machine code). The binary is native and standalone; the program body is not AOT-compiled.
-
-Roadmap for true native codegen:
-
-`.vel` → Lexer → Parser → AST → **C++ code generator** → `g++`/`clang` → binary  
-with no AST interpreter in the final executable (dynamic ops call a small runtime).
-
-Requirements: `g++` (C++17) on the PATH. Run `vela build` from the project directory that contains `vela.cpp`.
-
-
-**REPL commands:** `.help` · `.vars` · `.clear` · `exit`
+Run `vela build` from the directory that contains `vela.cpp`. On Windows, use MinGW `g++` to produce `.exe`.
 
 ---
 
 ## Language overview
 
-Examples below are **complete** — every name is defined before use.
-
 ### Bindings (`:=` vs `<-`)
 
 | Syntax | Meaning | Can change later? |
 |--------|---------|-------------------|
-| `x := value` | Create **once** (fixed) | No |
-| `x <- value` | Create or **update** | Yes |
-| `x += 1` | Update (needs existing mutable `x`) | — |
+| `x := value` | Create once (immutable) | No |
+| `x <- value` | Create or update (mutable) | Yes |
+| `x += 1` | Compound update (mutable only) | — |
 
-**Rule:** if the value will change, always start with `<-`. Use `:=` only for names that stay fixed.
-
-```vela
-name := "Vela";     // fixed — do not reassign
-count <- 0;         // changeable
-count <- count + 1;
-print(name, count);
-
-// Wrong:  x := 1; x := 2;     (:= only once)
-// Wrong:  x := 1; x <- 2;     (:= made it fixed)
-// Right:  x <- 1; x <- 2;
-```
+If a value will change, start with `<-`.
 
 ### Functions
 
 ```vela
 square(n) ==> n * n;
-factorial(n) ==> {
-    when n <= 1 { -> 1; }
-    else { -> n * factorial(n - 1); }
+abs(n) ==> {
+    when n < 0 { -> -n; }
+    -> n;
 };
-
-print(square(5));
-print(factorial(5));
-
-// Defaults and named arguments
-rect(w, h, unit := "px") ==> "${w}x${h}${unit}";
-print(rect(10, 20));
-print(rect(w := 3, h := 4, unit := "em"));
-
-// Lambdas and pipe
-double(x) ==> x * 2;
-print(5 |> double);
-print(5 |> double |> double);
+dbl(x) ==> x * 2;
+print(3 |> dbl |> dbl);
 ```
 
 ### Control flow
@@ -158,219 +114,36 @@ when x > 0 { print("positive"); }
 else when x < 0 { print("negative"); }
 else { print("zero"); }
 
-ready <- false;
-setup() ==> { print("setup"); ready <- true; };
-unless ready { setup(); }
-
-done <- false;
-n <- 0;
-step() ==> {
-    n <- n + 1;
-    print("step", n);
-    when n >= 3 { done <- true; }
-};
-until done { step(); }
-
-repeat i from 0 through 3 {
-    print(i);
-}
-repeat i from 0 to 10 by 5 {
-    print(i);
-}
-
-list := [10, 20, 30];
-repeat item in list {
-    print(item);
-}
-
-pairs := [[1, "a"], [2, "b"]];
-repeat [k, v] in pairs {
-    print(k, v);
-}
-
-i <- 0;
-loop {
-    when i >= 3 { bail; }          // break
-    when i == 1 { i <- i + 1; skip; }  // continue
-    print("loop", i);
-    i <- i + 1;
-}
+repeat i from 0 through 3 { print(i); }
+repeat i from 0 to 10 by 2 { print(i); }
+repeat item in [10, 20] { print(item); }
 ```
 
-`-> expr` returns from a function. `bail` breaks the innermost loop; `skip` continues to the next iteration.
+`->` returns from a function. `bail` breaks a loop; `skip` continues.
 
 ### Data
 
-```vela
-// Arrays, slices, spread
-a := [1, 2, 3, 4, 5];
-print(a[1:4], a[::-1], a[::2]);
-b := [...a, 6];
-print(b);
+Arrays, maps (`%{key: value}`), sets (`#{1, 2}`), ranges, records, enums, tuples, destructuring, slices, pipe (`|>`), match, modules (`import`).
 
-buf <- [1, 2, 3, 4, 5];
-buf[1:3] <- [9, 9];
-print(buf);
+### OS and resources
 
-// Maps
-user := %{name: "Ada", age: 36};
-print(user.name);
-print(user.missing ?? "n/a");
-print(user.address?.city);
-
-// Sets
-s := #{1, 2, 3};
-print(set_has(s, 2));
-set_add(s, 4);
-
-// Ranges
-r := 1 to 5;
-r2 := 1 through 5;
-r3 := 0 to 10 by 2;
-print(len(r));
-
-// Tuples (fixed sequences)
-t := (1, "two", true);
-print(t[0], t[1], t[2]);
-```
-
-### Records, enums, match
-
-```vela
-record Point { x: num, y: num, }
-p := new Point{x: 3, y: 4};
-print(p.x, p.y);
-print(p is Point);
-
-enum Status { Ok, Err }
-print(Status.Ok is Status);
-
-value := [1, 2, 3];
-print(match value {
-    0 => "zero",
-    n when n < 0 => "negative",
-    [h, ...t] => "list",
-    %{type: "user", name: n} => n,
-    _ => "other",
-});
-
-score := 87;
-print(match {
-    score >= 90 => "A",
-    score >= 80 => "B",
-    score >= 70 => "C",
-    _ => "F",
-});
-```
-
-### Errors and cleanup
-
-```vela
-try {
-    throw "something went wrong";
-} catch e {
-    print(e);
-}
-
-f() ==> {
-    defer print("cleanup");
-    print("work");
-    -> 1;
-};
-print(f());
-```
-
-### Modules
-
-See `examples/21_modules.vel` and `examples/utils_mod.vel`:
-
-```vela
-// utils_mod.vel
-VERSION := "1.0.0";
-double(x) ==> x * 2;
-area_circle(r) ==> PI * r * r;
-```
-
-Run the real example (paths resolve from the file’s directory):
-
-```bash
-./vela examples/21_modules.vel
-```
-
-The working module demo is the file on disk (not a free-standing snippet):
-
-```bash
-./vela examples/21_modules.vel
-```
-
-Contents of `examples/21_modules.vel`:
-
-```
-import "utils_mod.vel" as u;
-print("module version", u.VERSION);
-print("double 21 =", u.double(21));
-print("area r=2 =", u.area_circle(2));
-```
-
-Relative imports resolve from the **directory of the source file** being executed.
-
-
----
-
-## Standard library (selected)
-
-| Area | Functions |
-|------|-----------|
-| I/O | `print`, `eprint`, `readline`, `read_file`, `write_file`, `append_file`, `list_dir` |
-| Types | `type`, `str`, `num`, `try_num`, `len`, `assert`, `contains` |
-| Collections | `map`, `filter`, `reduce`, `sum`, `sorted`, `reverse`, `unique`, `flatten`, `concat`, `zip`, `enumerate`, `chunks`, `windows`, `partition`, `group_by`, `any`, `all` |
-| Sets | `set`, `set_has`, `set_add`, `set_remove`, `set_union`, `set_intersect`, `set_difference` |
-| Strings | `chars`, `trim`, `replace`, `starts_with`, `ends_with`, `join`, `split` |
-| Regex | `re_match`, `re_find_all`, `re_replace` |
-| JSON | `json_parse`, `json_stringify` |
-| Encoding | `base64_encode`, `hex_encode` |
-| Math | `sqrt`, `sin`, `cos`, `pow`, `abs`, `floor`, `ceil`, `round`, `min`, `max`, `random`, `gcd`, `lcm`, `is_prime`, `log`, … |
-| Constants | `PI`, `E`, `TAU`, `INF` |
-| Time | `now`, `sleep` |
-| OS / process | `platform`, `cwd`, `chdir`, `getenv`, `setenv`, `args`, `exit`, `run`, `file_exists`, `remove_file` |
+| Area | Builtins |
+|------|----------|
+| Files | `read_file`, `write_file`, `append_file`, `list_dir`, `file_exists`, `remove_file` |
+| Process | `run`, `exit`, `args`, `platform`, `cwd`, `chdir`, `sleep` |
+| Env | `getenv`, `setenv` |
 | Resources | `mem_usage`, `cpu_time`, `call_depth`, `set_max_depth`, `stack_trace` |
+| Convert | `num` (throws), `try_num` (returns `nil`), `str`, `type`, `len` |
 
 ---
 
 ## Examples
 
-Each major feature has a dedicated example under `examples/`:
-
-| File | Topic |
-|------|--------|
-| `01_hello.vel` | Printing |
-| `02_bindings.vel` | `:=` / `<-` |
-| `03_functions.vel` | Functions, defaults, named args |
-| `04_lambdas_pipe.vel` | Lambdas, pipe |
-| `05_control.vel` | when / skip / bail |
-| `06_until_unless.vel` | until, unless |
-| `07_ranges.vel` | Ranges and steps |
-| `08_arrays_slices.vel` | Arrays, slices, spread |
-| `09_destructure.vel` | Destructuring |
-| `10_maps.vel` | Maps, `?.`, `??` |
-| `11_records.vel` | Records |
-| `12_enums_match.vel` | Enums and match |
-| `13_errors_defer.vel` | throw / try / defer |
-| `14_closures.vel` | Closures, recursion |
-| `15_math.vel` | Math library |
-| `16_collections.vel` | Collection helpers |
-| `17_strings.vel` | Strings and regex |
-| `18_sets.vel` | Sets |
-| `19_json_files.vel` | JSON and files |
-| `20_bitwise_types.vel` | Bitwise ops, `is`, tuples |
-| `21_modules.vel` | Imports |
-| `22_operators.vel` | Operators, ternary |
-| `23_cond_match.vel` | Subjectless match |
-| `24_encoding_dir.vel` | Encoding, `list_dir` |
+See `examples/` (numbered `01`–`26` plus `utils_mod.vel`).
 
 ```bash
 ./vela examples/01_hello.vel
-./vela examples/14_closures.vel
+./vela examples/26_os.vel
 ```
 
 ---
@@ -379,67 +152,37 @@ Each major feature has a dedicated example under `examples/`:
 
 ```
 vela/
-├── vela.cpp          # Full interpreter (single translation unit)
+├── vela.cpp       # Interpreter (single translation unit)
 ├── Makefile
 ├── README.md
-├── explain.md        # Language explanation
-└── examples/         # Feature examples (.vel)
+├── explain.md     # Language explanation
+├── SPEC.md        # Spec draft
+├── ROADMAP.md     # Honest status / future work
+└── examples/      # Feature examples
 ```
-
-The implementation is a classic tree-walking interpreter: lexer → recursive-descent parser → AST → evaluator, plus a small standard library of native functions.
 
 ---
 
-## Design notes
+## What Vela is (and is not)
 
-- **Immutable vs mutable** is explicit (`:=` vs `<-`).
-- **Functions** use `==>` for bodies and `->` for returns.
-- **Method-style calls** `obj.fn(args)` inject `obj` as the first argument only when the parameter is named `self`.
-- **Division or modulo by zero** raises a runtime error.
-- Runtime errors print the source line and a caret when possible.
+**Is:** a custom-syntax scripting language with a C++17 tree-walking interpreter, modules, collections, and host OS access (files, env, processes).
+
+**Is not:** a finished systems language, GPU runtime, package manager, or full AOT compiler. See `ROADMAP.md` for open work.
 
 ---
 
 ## License
 
-Apache-2.0
+Copyright 2026 Vela contributors
 
----
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-## Status
+    http://www.apache.org/licenses/LICENSE-2.0
 
-Vela is a working single-file C++17 interpreter with a large example suite.
-
-- Run scripts: `./vela file.vel`
-- REPL: `./vela`
-- Package a standalone binary: `./vela build file.vel -o name`  
-  (embeds source + runtime; the binary is native, the program body is still interpreted)
-
-All numbered files under `examples/` are expected to run cleanly after `make`.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned work: memory/CPU controls, language expansion, syntax identity, diagnostics, native codegen, and reliability.
-
-New resource builtins: `mem_usage`, `cpu_time`, `call_depth`, `set_max_depth`, `stack_trace`.
-
-## Quality process
-
-Correctness is **not** claimed from examples alone. Permanent checks:
-
-```bash
-bash tests/run_all.sh              # feature + property + stress + examples
-bash tests/run_all.sh --asan       # AddressSanitizer
-bash tests/run_all.sh --ubsan      # UndefinedBehaviorSanitizer
-make test
-```
-
-| Piece | Location |
-|-------|----------|
-| Feature / edge tests | `tests/feature/` |
-| Property-style invariants | `tests/property/` |
-| Stress | `tests/stress/` |
-| Examples (smoke) | `examples/` |
-| Language rules (draft) | `SPEC.md` |
-| CI | `.github/workflows/vela-ci.yml` |
-| Roadmap | `ROADMAP.md` |
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

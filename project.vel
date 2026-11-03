@@ -1,0 +1,12 @@
+user := %{
+    name: "Ada",
+    age: 36,
+    address: %{ city: "London", UAE: "Dubai" }
+};
+
+print("Name:", user.name);
+print("City:", user.address.city);
+print("UAE:", user.address.UAE);
+// Safe navigation with ?. and fallback with ??
+print("State:", user.address?.state ?? "No state");
+print("Phone:", user.contact?.phone ?? "Unlisted");
