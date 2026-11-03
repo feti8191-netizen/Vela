@@ -4,6 +4,20 @@ Vela is a general-purpose programming language designed around a small set of ex
 
 ---
 
+
+## Running and building
+
+```bash
+g++ -std=c++17 -O2 -o vela vela.cpp   # or: make
+./vela file.vel                       # interpret a script
+./vela                                # REPL
+./vela build file.vel -o app          # standalone native binary
+./app
+```
+
+`vela build` produces a real OS binary by embedding your program with the runtime and compiling with `g++`. The result does not need the `.vel` file next to it. Today the embedded program is still executed by the interpreter inside that binary (not full AOT machine-code generation per statement).
+
+
 ## Nature of the language
 
 Vela is dynamically typed and expression-oriented where it helps, statement-oriented where control flow needs structure. Values carry their types at runtime. Optional type annotations act as runtime checks and documentation, not as a full static type system.

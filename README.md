@@ -82,11 +82,18 @@ Still supports running `.vel` directly. To ship a standalone program:
 ./hello                 # native binary — no .vel file needed at runtime
 ```
 
-How it works:
+How it works today:
 
-1. Vela embeds your `.vel` source into a small generated C++ file  
-2. That file is compiled together with the Vela runtime (`vela.cpp`) via `g++`  
-3. Result is a normal OS binary (Linux ELF, macOS Mach-O; on Windows use MinGW `g++` to get `.exe`)
+1. Your `.vel` source is **embedded** into a small generated C++ file  
+2. That file is compiled with the Vela **runtime** (`vela.cpp`) via `g++`  
+3. You get a normal OS binary (Linux ELF, macOS Mach-O; Windows `.exe` with MinGW)
+
+At run time the embedded source is still **interpreted** by the runtime (not lowered to per-statement machine code). The binary is native and standalone; the program body is not AOT-compiled.
+
+Roadmap for true native codegen:
+
+`.vel` → Lexer → Parser → AST → **C++ code generator** → `g++`/`clang` → binary  
+with no AST interpreter in the final executable (dynamic ops call a small runtime).
 
 Requirements: `g++` (C++17) on the PATH. Run `vela build` from the project directory that contains `vela.cpp`.
 
@@ -393,4 +400,17 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
- Apache-2.0
+Add your preferred license here (MIT, Apache-2.0, etc.).
+
+---
+
+## Status
+
+Vela is a working single-file C++17 interpreter with a large example suite.
+
+- Run scripts: `./vela file.vel`
+- REPL: `./vela`
+- Package a standalone binary: `./vela build file.vel -o name`  
+  (embeds source + runtime; the binary is native, the program body is still interpreted)
+
+All numbered files under `examples/` are expected to run cleanly after `make`.
