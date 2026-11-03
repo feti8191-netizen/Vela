@@ -1403,3 +1403,15 @@ Across the walkthroughs, the same habits repeat:
 | Match for decisions | enums, grades, HTTP-like codes, shape tags |
 
 That combination is the everyday style the language is built for: clear names, clear updates, and structured values flowing through functions and matches.
+
+## Diagnostics and resources
+
+| Builtin | Role |
+|---------|------|
+| `mem_usage()` | Resident memory in bytes (best-effort; Linux RSS) |
+| `cpu_time()` | CPU time used by the process (seconds) |
+| `call_depth()` | Current function call depth |
+| `set_max_depth(n)` | Limit recursion depth |
+| `stack_trace()` | Array of current call frames |
+
+Runtime errors print a source line and caret when possible, with hints for common binding mistakes.

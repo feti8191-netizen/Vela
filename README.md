@@ -331,7 +331,9 @@ Relative imports resolve from the **directory of the source file** being execute
 | Encoding | `base64_encode`, `hex_encode` |
 | Math | `sqrt`, `sin`, `cos`, `pow`, `abs`, `floor`, `ceil`, `round`, `min`, `max`, `random`, `gcd`, `lcm`, `is_prime`, `log`, … |
 | Constants | `PI`, `E`, `TAU`, `INF` |
-| Time | `now` |
+| Time | `now`, `sleep` |
+| OS / process | `platform`, `cwd`, `chdir`, `getenv`, `setenv`, `args`, `exit`, `run`, `file_exists`, `remove_file` |
+| Resources | `mem_usage`, `cpu_time`, `call_depth`, `set_max_depth`, `stack_trace` |
 
 ---
 
@@ -414,3 +416,30 @@ Vela is a working single-file C++17 interpreter with a large example suite.
   (embeds source + runtime; the binary is native, the program body is still interpreted)
 
 All numbered files under `examples/` are expected to run cleanly after `make`.
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned work: memory/CPU controls, language expansion, syntax identity, diagnostics, native codegen, and reliability.
+
+New resource builtins: `mem_usage`, `cpu_time`, `call_depth`, `set_max_depth`, `stack_trace`.
+
+## Quality process
+
+Correctness is **not** claimed from examples alone. Permanent checks:
+
+```bash
+bash tests/run_all.sh              # feature + property + stress + examples
+bash tests/run_all.sh --asan       # AddressSanitizer
+bash tests/run_all.sh --ubsan      # UndefinedBehaviorSanitizer
+make test
+```
+
+| Piece | Location |
+|-------|----------|
+| Feature / edge tests | `tests/feature/` |
+| Property-style invariants | `tests/property/` |
+| Stress | `tests/stress/` |
+| Examples (smoke) | `examples/` |
+| Language rules (draft) | `SPEC.md` |
+| CI | `.github/workflows/vela-ci.yml` |
+| Roadmap | `ROADMAP.md` |

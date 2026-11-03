@@ -1,0 +1,14 @@
+// OS / process / filesystem surface
+print("platform:", platform());
+print("cwd:", cwd());
+print("Makefile?", file_exists("Makefile"));
+print("args:", args());
+
+setenv("VELA_DEMO", "1");
+print("VELA_DEMO=", getenv("VELA_DEMO"));
+
+r := run("uname -s");
+print("uname status", r.status, "out", trim(r.stdout));
+
+print("mem_usage bytes", mem_usage());
+print("cpu_time", cpu_time());

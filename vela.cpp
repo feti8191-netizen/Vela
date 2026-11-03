@@ -12,6 +12,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <cstdio>
+#include <limits.h>
 #include <dirent.h>
 #include <fstream>
 #include <functional>
@@ -809,18 +814,24 @@ struct RecordType {
 struct Interpreter {
     EnvPtr global;
     int depth = 0;
+    int maxDepth = 2000;
     std::mt19937_64 rng;
     std::unordered_map<std::string, std::shared_ptr<RecordType>> recordTypes;
     std::unordered_map<std::string, EnvPtr> moduleCache;
     std::vector<std::string> dirStack;
     std::vector<std::pair<EnvPtr, StmtPtr>> defers;
     size_t deferScope = 0;
+    std::vector<std::string> callStack;
 
     Interpreter();
     void run(const std::vector<StmtPtr>& program);
     Value call(const Value& callee, std::vector<Value>& args, int line);
     EnvPtr loadModule(const std::string& path, int line);
 };
+
+static thread_local Interpreter* g_activeInterp = nullptr;
+static std::vector<std::string> g_programArgs;
+
 
 // ---------------------------------------------------------------------------
 // Value helpers
@@ -1971,7 +1982,8 @@ Value Interpreter::call(const Value& callee, std::vector<Value>& args, int line)
     }
 
     DepthGuard guard(depth);
-    if (depth > 2000) throw RuntimeError(line, "maximum call depth exceeded");
+    if (depth > maxDepth) throw RuntimeError(line, "maximum call depth exceeded (limit " + std::to_string(maxDepth) + ")");
+    callStack.push_back((fn->name.empty() ? std::string("<lambda>") : fn->name) + " (line " + std::to_string(line) + ")");
 
     Value result = Value::Nil();
     try {
@@ -1979,11 +1991,14 @@ Value Interpreter::call(const Value& callee, std::vector<Value>& args, int line)
     } catch (const ReturnSignal& r) {
         result = r.value;
     } catch (const BreakSignal&) {
+        callStack.pop_back();
         throw RuntimeError(line, "'bail' outside loop");
     } catch (const ContinueSignal&) {
+        callStack.pop_back();
         throw RuntimeError(line, "'skip' outside loop");
     }
 
+    callStack.pop_back();
     checkType(result, fn->returnType, line, true);
     return result;
 }
@@ -2105,6 +2120,37 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         return Value::Nil();
     });
 
+    def("call_depth", [](std::vector<Value>&) -> Value {
+        return Value::Num(g_activeInterp ? static_cast<double>(g_activeInterp->depth) : 0);
+    });
+    def("set_max_depth", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Num)
+            throw RuntimeError(0, "set_max_depth expects a number");
+        if (!g_activeInterp) return Value::Nil();
+        int d = static_cast<int>(args[0].n);
+        if (d < 8) d = 8;
+        g_activeInterp->maxDepth = d;
+        return Value::Num(static_cast<double>(d));
+    });
+    def("mem_usage", [](std::vector<Value>&) -> Value {
+        std::ifstream in("/proc/self/status");
+        std::string key; long kb = 0;
+        while (in >> key) {
+            if (key == "VmRSS:") { in >> kb; break; }
+            std::string rest; std::getline(in, rest);
+        }
+        return Value::Num(static_cast<double>(kb * 1024L));
+    });
+    def("cpu_time", [](std::vector<Value>&) -> Value {
+        return Value::Num(static_cast<double>(std::clock()) / double(CLOCKS_PER_SEC));
+    });
+    def("stack_trace", [](std::vector<Value>&) -> Value {
+        auto arr = std::make_shared<std::vector<Value>>();
+        if (g_activeInterp)
+            for (const auto& f : g_activeInterp->callStack)
+                arr->push_back(Value::Str(f));
+        return Value::Arr(arr);
+    });
     def("bool", [](std::vector<Value>& args) -> Value {
         if (args.size() != 1) throw RuntimeError(0, "bool expects 1 argument");
         return Value::Bool(truthy(args[0]));
@@ -2821,6 +2867,94 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         for (long long i = 5; i * i <= n; i += 6)
             if (n % i == 0 || n % (i + 2) == 0) return Value::Bool(false);
         return Value::Bool(true);
+    });
+
+
+    def("exit", [](std::vector<Value>& args) -> Value {
+        int code = 0;
+        if (args.size() >= 1 && args[0].kind == Value::Kind::Num)
+            code = static_cast<int>(args[0].n);
+        std::exit(code);
+        return Value::Nil();
+    });
+    def("getenv", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "getenv expects a string name");
+        const char* v = std::getenv(args[0].s.c_str());
+        if (!v) return Value::Nil();
+        return Value::Str(v);
+    });
+    def("setenv", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2 || args[0].kind != Value::Kind::Str || args[1].kind != Value::Kind::Str)
+            throw RuntimeError(0, "setenv expects (name, value) strings");
+#ifdef _WIN32
+        _putenv_s(args[0].s.c_str(), args[1].s.c_str());
+#else
+        setenv(args[0].s.c_str(), args[1].s.c_str(), 1);
+#endif
+        return Value::Nil();
+    });
+    def("args", [](std::vector<Value>&) -> Value {
+        auto arr = std::make_shared<std::vector<Value>>();
+        for (const auto& a : g_programArgs) arr->push_back(Value::Str(a));
+        return Value::Arr(arr);
+    });
+    def("cwd", [](std::vector<Value>&) -> Value {
+        char buf[PATH_MAX];
+        if (!getcwd(buf, sizeof(buf))) throw RuntimeError(0, "cwd failed");
+        return Value::Str(buf);
+    });
+    def("chdir", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "chdir expects a path string");
+        if (::chdir(args[0].s.c_str()) != 0)
+            throw RuntimeError(0, "chdir failed: " + args[0].s);
+        return Value::Nil();
+    });
+    def("sleep", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Num)
+            throw RuntimeError(0, "sleep expects seconds (number)");
+        double sec = args[0].n;
+        if (sec < 0) sec = 0;
+        usleep(static_cast<useconds_t>(sec * 1e6));
+        return Value::Nil();
+    });
+    def("platform", [](std::vector<Value>&) -> Value {
+#ifdef _WIN32
+        return Value::Str("windows");
+#elif __APPLE__
+        return Value::Str("macos");
+#else
+        return Value::Str("linux");
+#endif
+    });
+    def("file_exists", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "file_exists expects a path string");
+        std::ifstream in(args[0].s);
+        return Value::Bool(in.good());
+    });
+    def("remove_file", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "remove_file expects a path string");
+        return Value::Bool(std::remove(args[0].s.c_str()) == 0);
+    });
+    def("run", [](std::vector<Value>& args) -> Value {
+        // run("command") -> %{status: n, stdout: str}
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "run expects a command string");
+        std::string cmd = args[0].s + " 2>&1";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) throw RuntimeError(0, "run failed to start process");
+        std::string out;
+        char buf[4096];
+        while (fgets(buf, sizeof(buf), pipe)) out += buf;
+        int st = pclose(pipe);
+        int code = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+        auto m = std::make_shared<std::map<std::string, Value>>();
+        (*m)["status"] = Value::Num(code);
+        (*m)["stdout"] = Value::Str(out);
+        return Value::Map(m);
     });
 
     def("now", [](std::vector<Value>& args) -> Value {
@@ -4021,6 +4155,11 @@ static void reportError(const std::string& kind, int line, const std::string& ms
     if (line > 0 && line <= static_cast<int>(g_sourceLines.size())) {
         std::cerr << "  " << g_sourceLines[static_cast<size_t>(line - 1)] << '\n';
         std::cerr << "  ^\n";
+    if (g_activeInterp && !g_activeInterp->callStack.empty()) {
+        std::cerr << "call stack (most recent last):\n";
+        for (const auto& frame : g_activeInterp->callStack)
+            std::cerr << "  in " << frame << '\n';
+    }
     }
 }
 
@@ -4043,6 +4182,7 @@ int runSource(const std::string& src, bool replMode, const std::string& baseDir)
         std::vector<StmtPtr> prog = parser.parseProgram();
 
         Interpreter I;
+        g_activeInterp = &I;
         I.dirStack.push_back(baseDir);
         if (replMode) {
             for (const auto& s : prog) {
@@ -4057,9 +4197,12 @@ int runSource(const std::string& src, bool replMode, const std::string& baseDir)
         reportError("parse error", e.line, e.what());
     } catch (const RuntimeError& e) {
         reportError("runtime error", e.line, e.what());
+    } catch (const ErrorSignal& e) {
+        reportError("runtime error", 0, e.value.toString(false));
     } catch (const std::exception& e) {
         reportError("error", 0, e.what());
     }
+    g_activeInterp = nullptr;
     return 1;
 }
 
@@ -4078,6 +4221,8 @@ static int runSourceOn(Interpreter& I, const std::string& src) {
         reportError("parse error", e.line, e.what());
     } catch (const RuntimeError& e) {
         reportError("runtime error", e.line, e.what());
+    } catch (const ErrorSignal& e) {
+        reportError("runtime error", 0, e.value.toString(false));
     } catch (const std::exception& e) {
         reportError("error", 0, e.what());
     }
@@ -4307,6 +4452,20 @@ int main(int argc, char** argv) {
                 return 1;
             }
             return 0;
+        }
+        g_programArgs.clear();
+        // script path + trailing args after the script name
+        g_programArgs.push_back(path);
+        // re-scan argv for args after path
+        bool seen = false;
+        for (int i = 1; i < argc; i++) {
+            std::string a = argv[i];
+            if (!seen) {
+                if (a == path) seen = true;
+                continue;
+            }
+            if (!a.empty() && a[0] == '-') continue;
+            g_programArgs.push_back(a);
         }
         return runSource(src, false, dirOf(path));
     }
