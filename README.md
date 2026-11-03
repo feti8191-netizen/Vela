@@ -67,10 +67,29 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 | Command | Meaning |
 |---------|---------|
 | `./vela` | Start the REPL |
-| `./vela file.vel` | Run a source file |
+| `./vela file.vel` | Run a source file (interpreter) |
+| `./vela build file.vel -o name` | Compile to a **native binary** |
 | `./vela --tokens file.vel` | Dump lexer tokens |
 | `./vela --help` | Show help |
 | `./vela --version` | Print version |
+
+### Compile to a native binary
+
+Still supports running `.vel` directly. To ship a standalone program:
+
+```bash
+./vela build examples/01_hello.vel -o hello
+./hello                 # native binary — no .vel file needed at runtime
+```
+
+How it works:
+
+1. Vela embeds your `.vel` source into a small generated C++ file  
+2. That file is compiled together with the Vela runtime (`vela.cpp`) via `g++`  
+3. Result is a normal OS binary (Linux ELF, macOS Mach-O; on Windows use MinGW `g++` to get `.exe`)
+
+Requirements: `g++` (C++17) on the PATH. Run `vela build` from the project directory that contains `vela.cpp`.
+
 
 **REPL commands:** `.help` · `.vars` · `.clear` · `exit`
 
@@ -374,4 +393,4 @@ The implementation is a classic tree-walking interpreter: lexer → recursive-de
 
 ## License
 
- Apache-2.0
+Add your preferred license here (MIT, Apache-2.0, etc.).
