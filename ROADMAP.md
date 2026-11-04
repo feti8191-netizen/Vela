@@ -1,3 +1,12 @@
+## Completed in language-focus pass
+
+- Enums with associated data + match unpack
+- Record methods (`self`)
+- Tuple literals `(a, b)`
+- String helpers: to_upper/lower, index_of, pad_left/right
+- Collection helpers already present: flatten, unique, group_by, partition, chunks, windows
+- Examples 27–30
+
 # Vela roadmap — honest status
 
 Vela is a **real interpreter** with a growing standard library. It is **not** a systems language, not a package ecosystem like Python/npm, and not a GPU/compute runtime. Below is what exists vs what is still open.

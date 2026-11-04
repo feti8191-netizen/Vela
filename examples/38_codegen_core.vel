@@ -1,0 +1,10 @@
+// Core subset — suitable for: vela build examples/38_codegen_core.vel -o core_app
+name := "Vela";
+n <- 0;
+repeat i from 1 through 5 {
+    n <- n + i;
+}
+print(name, "sum", n);
+when n == 15 {
+    print("ok");
+}

@@ -1,0 +1,6 @@
+// Build with: vela build examples/39_codegen_funcs.vel -o fns
+add(a, b) ==> a + b;
+double(n) ==> n * 2;
+print(add(10, 5));
+print(3 |> double);
+print(5 |> double |> double);

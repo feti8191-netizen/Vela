@@ -1,0 +1,8 @@
+m := %{name: "Ada", year: 1815};
+repeat [k, v] in m {
+    print(k, "=", v);
+}
+pairs := [["a", 1], ["b", 2]];
+repeat [k, v] in pairs {
+    print(k, v);
+}

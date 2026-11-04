@@ -1,0 +1,3 @@
+import { upper, pad } from "std/str.vel";
+print(upper("vela"));
+print(pad(42, 5));

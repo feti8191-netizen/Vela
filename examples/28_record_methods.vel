@@ -1,0 +1,12 @@
+// Methods on records (implicit self)
+record Point {
+    x: num,
+    y: num,
+    dist() ==> sqrt(self.x ** 2 + self.y ** 2),
+    add(other) ==> new Point{x: self.x + other.x, y: self.y + other.y},
+}
+
+p := new Point{x: 3, y: 4};
+print(p.dist());
+q := p.add(new Point{x: 1, y: 1});
+print(q.x, q.y);

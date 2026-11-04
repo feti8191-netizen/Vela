@@ -1,0 +1,20 @@
+trait Show {
+    show() : str,
+}
+
+record Point {
+    x: num,
+    y: num,
+}
+
+impl Show for Point {
+    show() ==> "Point(${self.x}, ${self.y})",
+}
+
+impl Point {
+    dist() ==> sqrt(self.x ** 2 + self.y ** 2),
+}
+
+p := new Point{x: 3, y: 4};
+print(p.show());
+print(p.dist());

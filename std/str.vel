@@ -1,0 +1,5 @@
+// import "std/str.vel" as S
+upper(s) ==> to_upper(s);
+lower(s) ==> to_lower(s);
+pad(s, w, fill := "0") ==> pad_left(str(s), w, fill);
+contains_str(s, sub) ==> contains(s, sub);

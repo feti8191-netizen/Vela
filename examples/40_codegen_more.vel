@@ -1,0 +1,8 @@
+// Expanded codegen: compound assign, ternary, assert, functions
+n <- 10;
+n += 5;
+assert n == 15;
+msg := n > 10 ? "big" : "small";
+print(msg);
+dbl(x) ==> x * 2;
+print(dbl(n));

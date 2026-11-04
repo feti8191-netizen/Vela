@@ -1,0 +1,7 @@
+// Extra string toolkit
+print(to_upper("vela"));
+print(to_lower("VELA"));
+print(index_of("hello", "ll"));
+print(pad_left("42", 5, "0"));
+print(pad_right("hi", 5, "-"));
+print(substr("abcdef", 1, 3));

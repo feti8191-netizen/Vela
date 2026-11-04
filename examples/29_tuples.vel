@@ -1,0 +1,7 @@
+// Tuple literals (fixed sequences via (a, b, ...))
+t := (10, "ok", true);
+print(t[0], t[1], t[2]);
+[x, y, z] := t;
+print(x, y, z);
+pair := (1, 2);
+print(pair[0] + pair[1]);

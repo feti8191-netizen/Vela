@@ -76,7 +76,12 @@ g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
 ./hello
 ```
 
-This embeds your program with the runtime and compiles with `g++`. The result is a normal OS binary. Today the program body is still **interpreted** inside that binary (not full AOT machine-code generation).
+This embeds your program with the runtime and compiles with `g++`. The result is a normal OS binary. **Core subset** programs are lowered **AST → C++** (no source embedding). Unsupported constructs cause `vela build` to **fail** with a list of reasons (no silent embed).
+
+Supported for build: bindings, numbers/strings/bools, arithmetic, logic (`&&` `||` `??`), ternary, `is`, ranges, compound assign, `assert`, `print`/named calls, **functions** (`==>`), **pipe** (`|>`), `when`/`else`, `loop`, `repeat`, arrays/maps (basic), index, field access, string interpolation.
+
+Full language: `./vela file.vel` (interpreter).
+
 
 Run `vela build` from the directory that contains `vela.cpp`. On Windows, use MinGW `g++` to produce `.exe`.
 
@@ -170,6 +175,44 @@ vela/
 **Is not:** a finished systems language, GPU runtime, package manager, or full AOT compiler. See `ROADMAP.md` for open work.
 
 ---
+
+
+### Newer language features
+
+- **Enums with data:** `enum Shape { Circle(r), Rect(w, h) }` and `match s { Shape.Circle(r) => ... }`
+- **Record methods:** `record Point { x: num, y: num, dist() ==> ..., }` then `p.dist()`
+- **Tuples:** `(1, "a", true)` with index and destructuring
+- **Strings:** `to_upper`, `to_lower`, `index_of`, `pad_left`, `pad_right`, `substr`
+
+### Traits and impl
+
+```vela
+trait Show { show() : str }
+record Point { x: num, y: num }
+impl Show for Point { show() ==> "Point(...)", }
+impl Point { dist() ==> sqrt(self.x**2 + self.y**2), }
+```
+
+### Std modules
+
+```vela
+import "std/str.vel" as S;
+import "std/list.vel" as L;
+```
+
+### Selective import
+
+```vela
+import { upper, pad } from "std/str.vel";
+```
+
+### Set operations
+
+`union`, `intersect`, `difference` (also `set_union`, `set_intersect`, `set_difference`).
+
+### REPL
+
+`.help` `.vars` `.type <expr>` `.load <file>` `.clear`
 
 ## License
 

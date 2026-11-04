@@ -1,0 +1,12 @@
+minmax(xs) ==> {
+    when len(xs) == 0 { -> (nil, nil); }
+    lo <- xs[0];
+    hi <- xs[0];
+    repeat x in xs {
+        when x < lo { lo <- x; }
+        when x > hi { hi <- x; }
+    }
+    -> (lo, hi);
+};
+[lo, hi] := minmax([9, 2, 7, 1, 8]);
+print("min", lo, "max", hi);

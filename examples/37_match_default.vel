@@ -1,0 +1,13 @@
+// match without covering arm fails clearly
+try {
+    print(match 99 {
+        1 => "one",
+        2 => "two"
+    });
+} catch e {
+    print("caught:", e);
+}
+print(match 2 {
+    1 => "one",
+    _ => "other"
+});

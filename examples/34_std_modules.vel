@@ -1,0 +1,6 @@
+import "std/str.vel" as S;
+import "std/list.vel" as L;
+print(S.upper("vela"));
+print(S.pad(42, 5));
+print(L.head([10, 20, 30]));
+print(L.uniq([1, 1, 2, 2, 3]));

@@ -76,7 +76,7 @@ struct RuntimeError : std::runtime_error {
 enum class Tok {
     Number, String, Ident,
     When, Else, Loop, Repeat, From, To, Through, In, Bail, Skip,
-    Assert, Is, Throw, Try, Catch, Record, New, Match, Import, As, Enum, Defer, By, Until, Unless,
+    Assert, Is, Throw, Try, Catch, Record, New, Match, Import, As, Enum, Defer, By, Until, Unless, Trait, Impl, For,
     True, False, Nil,
     Plus, Minus, Star, Slash, Percent, StarStar,
     Amp, Pipe, Caret, Tilde, Shl, Shr,
@@ -316,6 +316,9 @@ private:
         else if (text == "import")  type = Tok::Import;
         else if (text == "as")      type = Tok::As;
         else if (text == "enum")    type = Tok::Enum;
+        else if (text == "trait")   type = Tok::Trait;
+        else if (text == "impl")    type = Tok::Impl;
+        else if (text == "for")     type = Tok::For;
         else if (text == "defer")   type = Tok::Defer;
         else if (text == "by")      type = Tok::By;
         else if (text == "until")   type = Tok::Until;
@@ -575,13 +578,14 @@ struct PipeExpr : Expr {
 
 // Pattern matching
 struct Pattern {
-    enum class PKind { Wildcard, Binding, Literal, Array, Map };
+    enum class PKind { Wildcard, Binding, Literal, Array, Map, EnumData };
     PKind kind = PKind::Wildcard;
     std::string bind;
     Value literal;
     std::vector<Pattern> elems;
     std::string rest; // for [x, ...rest]
     std::vector<std::pair<std::string, Pattern>> mapEntries;
+    std::string enumTag; // "Shape.Circle" for EnumData
     int line = 1;
 
     bool match(const Value& v, const EnvPtr& binds) const;
@@ -614,7 +618,9 @@ struct IsExpr : Expr {
 struct ArrayExpr : Expr {
     struct Elem { ExprPtr expr; bool spread; };
     std::vector<Elem> elems;
-    ArrayExpr(std::vector<Elem> e, int l) : elems(std::move(e)) { line = l; }
+    bool isTuple = false;
+    ArrayExpr(std::vector<Elem> e, int l, bool tup = false)
+        : elems(std::move(e)), isTuple(tup) { line = l; }
     Value eval(const EnvPtr& env, Interpreter& I) override;
 };
 
@@ -772,15 +778,57 @@ struct TryCatchStmt : Stmt {
 struct RecordDeclStmt : Stmt {
     std::string name;
     std::vector<std::pair<std::string, std::string>> fields;
+    // methods: name + function (params include optional self)
+    std::vector<std::shared_ptr<Function>> methods;
     RecordDeclStmt(std::string n, std::vector<std::pair<std::string, std::string>> f, int l)
         : name(std::move(n)), fields(std::move(f)) { line = l; }
     Value exec(const EnvPtr& env, Interpreter& I) override;
 };
 
+struct EnumVariantDecl {
+    std::string name;
+    std::vector<std::string> fields; // empty => unit variant
+};
+
+struct EnumDeclStmt : Stmt {
+    std::string name;
+    std::vector<EnumVariantDecl> variants;
+    EnumDeclStmt(std::string n, std::vector<EnumVariantDecl> v, int l)
+        : name(std::move(n)), variants(std::move(v)) { line = l; }
+    Value exec(const EnvPtr& env, Interpreter& I) override;
+};
+
+struct TraitMethodSig {
+    std::string name;
+    std::vector<std::string> paramNames; // excluding implicit self
+    std::string returnType = "any";
+};
+
+struct TraitDeclStmt : Stmt {
+    std::string name;
+    std::vector<TraitMethodSig> methods;
+    TraitDeclStmt(std::string n, std::vector<TraitMethodSig> m, int l)
+        : name(std::move(n)), methods(std::move(m)) { line = l; }
+    Value exec(const EnvPtr& env, Interpreter& I) override;
+};
+
+struct ImplStmt : Stmt {
+    std::string traitName; // empty => inherent impl
+    std::string typeName;
+    std::vector<std::shared_ptr<Function>> methods;
+    ImplStmt(std::string tr, std::string ty, std::vector<std::shared_ptr<Function>> m, int l)
+        : traitName(std::move(tr)), typeName(std::move(ty)), methods(std::move(m)) { line = l; }
+    Value exec(const EnvPtr& env, Interpreter& I) override;
+};
+
+
 struct ImportStmt : Stmt {
     std::string path;
     std::string asName;
+    std::vector<std::string> names; // selective: import { a, b } from "path"
     ImportStmt(std::string p, std::string a, int l) : path(std::move(p)), asName(std::move(a)) { line = l; }
+    ImportStmt(std::string p, std::vector<std::string> n, int l)
+        : path(std::move(p)), names(std::move(n)) { line = l; }
     Value exec(const EnvPtr& env, Interpreter& I) override;
 };
 
@@ -809,6 +857,8 @@ struct Function {
 struct RecordType {
     std::string name;
     std::vector<std::pair<std::string, std::string>> fields; // name, type
+    // method name -> function value template (closure filled at construct)
+    std::vector<std::pair<std::string, std::shared_ptr<Function>>> methods;
 };
 
 struct Interpreter {
@@ -817,6 +867,7 @@ struct Interpreter {
     int maxDepth = 2000;
     std::mt19937_64 rng;
     std::unordered_map<std::string, std::shared_ptr<RecordType>> recordTypes;
+    std::unordered_map<std::string, std::vector<TraitMethodSig>> traits;
     std::unordered_map<std::string, EnvPtr> moduleCache;
     std::vector<std::string> dirStack;
     std::vector<std::pair<EnvPtr, StmtPtr>> defers;
@@ -966,7 +1017,19 @@ static std::string typeName(const Value& v) {
         case Value::Kind::Str:  return "str";
         case Value::Kind::Bool: return "bool";
         case Value::Kind::Arr:  return "arr";
-        case Value::Kind::Map:  return "map";
+        case Value::Kind::Map:
+            if (v.map->count("__set")) return "set";
+            if (v.map->count("__record")) {
+                auto it = v.map->find("__record");
+                if (it != v.map->end() && it->second.kind == Value::Kind::Str)
+                    return it->second.s;
+            }
+            if (v.map->count("__tag")) {
+                auto it = v.map->find("__tag");
+                if (it != v.map->end() && it->second.kind == Value::Kind::Str)
+                    return it->second.s;
+            }
+            return "map";
         case Value::Kind::Range: return "range";
         case Value::Kind::Func: return "fn";
         case Value::Kind::Native: return "fn";
@@ -1384,28 +1447,36 @@ Value SliceExpr::eval(const EnvPtr& env, Interpreter& I) {
 }
 
 Value IsExpr::eval(const EnvPtr& env, Interpreter& I) {
+    (void)I;
     Value v = operand->eval(env, I);
-    // Built-in types
     std::string actual = ::typeName(v);
     if (actual == this->typeName) return Value::Bool(true);
-    // Record types
+
     if (v.kind == Value::Kind::Map) {
-        auto it = v.map->find("__record");
-        if (it != v.map->end() && it->second.kind == Value::Kind::Str) {
-            if (it->second.s == this->typeName) return Value::Bool(true);
+        if (v.map->count("__set") && this->typeName == "set")
+            return Value::Bool(true);
+        auto rit = v.map->find("__record");
+        if (rit != v.map->end() && rit->second.kind == Value::Kind::Str) {
+            if (rit->second.s == this->typeName) return Value::Bool(true);
         }
+        // Enum with data: __tag "Shape.Circle" matches Shape or Shape.Circle
+        auto tit = v.map->find("__tag");
+        if (tit != v.map->end() && tit->second.kind == Value::Kind::Str) {
+            const std::string& tag = tit->second.s;
+            if (tag == this->typeName) return Value::Bool(true);
+            std::string prefix = this->typeName + ".";
+            if (tag.size() > prefix.size() && tag.compare(0, prefix.size(), prefix) == 0)
+                return Value::Bool(true);
+        }
+        auto eit = v.map->find("__enum");
+        if (eit != v.map->end() && eit->second.kind == Value::Kind::Str &&
+            eit->second.s == this->typeName)
+            return Value::Bool(true);
     }
-    // Enum variant: value is string "Color.Red", type name is "Color"
+    // Unit enum variant string: "Color.Red" matches Color
     if (v.kind == Value::Kind::Str) {
         std::string prefix = this->typeName + ".";
         if (v.s.size() > prefix.size() && v.s.compare(0, prefix.size(), prefix) == 0)
-            return Value::Bool(true);
-    }
-    // Enum type object itself
-    if (v.kind == Value::Kind::Map) {
-        auto it = v.map->find("__enum");
-        if (it != v.map->end() && it->second.kind == Value::Kind::Str &&
-            it->second.s == this->typeName)
             return Value::Bool(true);
     }
     return Value::Bool(false);
@@ -1484,6 +1555,22 @@ bool Pattern::match(const Value& v, const EnvPtr& binds) const {
                 auto it = v.map->find(e.first);
                 Value mv = (it != v.map->end()) ? it->second : Value::Nil();
                 if (!e.second.match(mv, binds)) return false;
+            }
+            return true;
+        }
+        case PKind::EnumData: {
+            // Value is map with __tag == enumTag and numbered/named fields
+            if (v.kind != Value::Kind::Map) return false;
+            auto it = v.map->find("__tag");
+            if (it == v.map->end() || it->second.kind != Value::Kind::Str) return false;
+            if (it->second.s != enumTag) return false;
+            // Bind payload fields by order: elems[i] matches map field names stored in order under __fields array
+            // or positional keys "0","1",...
+            for (size_t i = 0; i < elems.size(); i++) {
+                std::string key = std::to_string(i);
+                auto fit = v.map->find(key);
+                Value mv = (fit != v.map->end()) ? fit->second : Value::Nil();
+                if (!elems[i].match(mv, binds)) return false;
             }
             return true;
         }
@@ -1744,6 +1831,17 @@ Value ForRangeStmt::exec(const EnvPtr& env, Interpreter& I) {
 Value ForEachStmt::exec(const EnvPtr& env, Interpreter& I) {
     Value it = iterable->eval(env, I);
 
+    auto runBody = [&](EnvPtr iter) {
+        try {
+            body->exec(iter, I);
+            return true; // continue
+        } catch (const BreakSignal&) {
+            return false;
+        } catch (const ContinueSignal&) {
+            return true;
+        }
+    };
+
     if (it.kind == Value::Kind::Arr) {
         std::vector<Value> snapshot = *it.arr;
         for (const auto& v : snapshot) {
@@ -1754,19 +1852,45 @@ Value ForEachStmt::exec(const EnvPtr& env, Interpreter& I) {
                         Value el = (i < v.arr->size()) ? (*v.arr)[i] : Value::Nil();
                         iter->define(destructure[i], el, false);
                     }
+                } else if (v.kind == Value::Kind::Map) {
+                    // pair-like map: prefer [k,v] from keys "0","1" or first two entries
+                    for (size_t i = 0; i < destructure.size(); i++) {
+                        auto kit = v.map->find(std::to_string(i));
+                        Value el = (kit != v.map->end()) ? kit->second : Value::Nil();
+                        iter->define(destructure[i], el, false);
+                    }
                 } else {
-                    throw RuntimeError(line, "cannot destructure non-array in repeat");
+                    throw RuntimeError(line, "cannot destructure value in repeat (need array or pair)");
                 }
             } else {
                 iter->define(var, v, false);
             }
-            try {
-                body->exec(iter, I);
-            } catch (const BreakSignal&) {
-                break;
-            } catch (const ContinueSignal&) {
-                continue;
+            if (!runBody(iter)) break;
+        }
+        return Value::Nil();
+    }
+
+    // Map iteration: repeat [k, v] in map { }  or  repeat e in map { } with e = [k,v]
+    if (it.kind == Value::Kind::Map) {
+        std::vector<std::pair<std::string, Value>> snapshot;
+        for (const auto& kv : *it.map) {
+            if (kv.first.size() >= 2 && kv.first[0] == '_' && kv.first[1] == '_') continue; // skip __markers
+            snapshot.push_back(kv);
+        }
+        for (const auto& kv : snapshot) {
+            EnvPtr iter = std::make_shared<Env>(env);
+            if (!destructure.empty()) {
+                if (destructure.size() >= 1) iter->define(destructure[0], Value::Str(kv.first), false);
+                if (destructure.size() >= 2) iter->define(destructure[1], kv.second, false);
+                for (size_t i = 2; i < destructure.size(); i++)
+                    iter->define(destructure[i], Value::Nil(), false);
+            } else {
+                auto pair = std::make_shared<std::vector<Value>>();
+                pair->push_back(Value::Str(kv.first));
+                pair->push_back(kv.second);
+                iter->define(var, Value::Arr(pair), false);
             }
+            if (!runBody(iter)) break;
         }
         return Value::Nil();
     }
@@ -1895,18 +2019,95 @@ Value RecordDeclStmt::exec(const EnvPtr& env, Interpreter& I) {
     auto rt = std::make_shared<RecordType>();
     rt->name = name;
     rt->fields = fields;
+    for (auto& fn : methods) rt->methods.push_back({fn->name, fn});
     I.recordTypes[name] = rt;
-    // Also bind the name so `is Point` and construction can find it
     env->define(name, Value::Str(name), true);
     return Value::Nil();
 }
+
+Value EnumDeclStmt::exec(const EnvPtr& env, Interpreter& I) {
+    (void)I;
+    auto m = std::make_shared<std::map<std::string, Value>>();
+    (*m)["__enum"] = Value::Str(name);
+    for (const auto& vd : variants) {
+        std::string tag = name + "." + vd.name;
+        if (vd.fields.empty()) {
+            (*m)[vd.name] = Value::Str(tag);
+        } else {
+            // Constructor: Shape.Circle(r) -> %{__tag: "Shape.Circle", 0: r, ...}
+            auto nf = std::make_shared<NativeFunction>();
+            auto fieldNames = vd.fields;
+            auto tagCopy = tag;
+            nf->fn = [fieldNames, tagCopy](std::vector<Value>& args) -> Value {
+                if (args.size() != fieldNames.size())
+                    throw RuntimeError(0, "enum variant '" + tagCopy + "' expects " +
+                        std::to_string(fieldNames.size()) + " argument(s)");
+                auto mm = std::make_shared<std::map<std::string, Value>>();
+                (*mm)["__tag"] = Value::Str(tagCopy);
+                for (size_t i = 0; i < fieldNames.size(); i++) {
+                    (*mm)[std::to_string(i)] = args[i];
+                    (*mm)[fieldNames[i]] = args[i];
+                }
+                return Value::Map(mm);
+            };
+            (*m)[vd.name] = Value::Native(nf);
+        }
+    }
+    env->define(name, Value::Map(m), true);
+    return Value::Nil();
+}
+
+Value TraitDeclStmt::exec(const EnvPtr& env, Interpreter& I) {
+    I.traits[name] = methods;
+    env->define(name, Value::Str(name), true);
+    return Value::Nil();
+}
+
+Value ImplStmt::exec(const EnvPtr& env, Interpreter& I) {
+    (void)env;
+    auto it = I.recordTypes.find(typeName);
+    if (it == I.recordTypes.end()) {
+        throw RuntimeError(line, "impl for unknown record type '" + typeName + "' — declare the record first");
+    }
+    if (!traitName.empty()) {
+        auto tt = I.traits.find(traitName);
+        if (tt == I.traits.end()) {
+            throw RuntimeError(line, "unknown trait '" + traitName + "'");
+        }
+        // Check all trait methods are implemented
+        for (const auto& sig : tt->second) {
+            bool found = false;
+            for (const auto& m : methods) if (m->name == sig.name) { found = true; break; }
+            if (!found)
+                throw RuntimeError(line, "impl " + traitName + " for " + typeName +
+                    " missing method '" + sig.name + "'");
+        }
+    }
+    for (auto& fn : methods) {
+        // Ensure first param is self
+        if (fn->params.empty() || fn->params[0].name != "self") {
+            Param selfP; selfP.name = "self";
+            fn->params.insert(fn->params.begin(), selfP);
+        }
+        it->second->methods.push_back({fn->name, fn});
+    }
+    return Value::Nil();
+}
+
 
 // loadModule implemented after Parser class
 
 Value ImportStmt::exec(const EnvPtr& env, Interpreter& I) {
     EnvPtr mod = I.loadModule(path, line);
-    if (!asName.empty()) {
-        // import "x.vel" as u  →  bind a map of all exports
+    if (!names.empty()) {
+        // import { a, b } from "x.vel"
+        for (const auto& n : names) {
+            Value* v = mod->lookup(n);
+            if (!v)
+                throw RuntimeError(line, "module does not export '" + n + "'");
+            env->define(n, *v, true);
+        }
+    } else if (!asName.empty()) {
         auto m = std::make_shared<std::map<std::string, Value>>();
         for (const auto& kv : mod->vars) {
             if (kv.first.size() >= 2 && kv.first[0] == '_' && kv.first[1] == '_') continue;
@@ -1914,7 +2115,6 @@ Value ImportStmt::exec(const EnvPtr& env, Interpreter& I) {
         }
         env->define(asName, Value::Map(m), true);
     } else {
-        // import "x.vel"  →  copy all bindings into current env
         for (const auto& kv : mod->vars) {
             if (kv.first.size() >= 2 && kv.first[0] == '_' && kv.first[1] == '_') continue;
             env->define(kv.first, kv.second, true);
@@ -1932,6 +2132,12 @@ Value RecordConstructExpr::eval(const EnvPtr& env, Interpreter& I) {
     (*m)["__record"] = Value::Str(typeName);
     for (const auto& f : fields) {
         (*m)[f.first] = f.second->eval(env, I);
+    }
+    // Attach methods (shared Function objects; call uses method-self sugar when first param is self)
+    for (const auto& meth : it->second->methods) {
+        auto fv = std::make_shared<Function>(*meth.second);
+        fv->closure = env;
+        (*m)[meth.first] = Value::Func(fv);
     }
     return Value::Map(m);
 }
@@ -2068,6 +2274,11 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         if (v.kind == Value::Kind::Map && v.map->count("__set")) return Value::Str("set");
         if (v.kind == Value::Kind::Map && v.map->count("__record")) {
             auto it = v.map->find("__record");
+            if (it != v.map->end() && it->second.kind == Value::Kind::Str)
+                return Value::Str(it->second.s);
+        }
+        if (v.kind == Value::Kind::Map && v.map->count("__tag")) {
+            auto it = v.map->find("__tag");
             if (it != v.map->end() && it->second.kind == Value::Kind::Str)
                 return Value::Str(it->second.s);
         }
@@ -2486,7 +2697,51 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         return Value::Str(s.substr(start, end - start));
     });
 
-    def("starts_with", [](std::vector<Value>& args) -> Value {
+    
+    def("to_upper", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "to_upper expects a string");
+        std::string s = args[0].s;
+        for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return Value::Str(s);
+    });
+    def("to_lower", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "to_lower expects a string");
+        std::string s = args[0].s;
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return Value::Str(s);
+    });
+    def("index_of", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2 || args[0].kind != Value::Kind::Str || args[1].kind != Value::Kind::Str)
+            throw RuntimeError(0, "index_of expects (string, substring)");
+        auto p = args[0].s.find(args[1].s);
+        if (p == std::string::npos) return Value::Num(-1);
+        return Value::Num(static_cast<double>(p));
+    });
+    def("pad_left", [](std::vector<Value>& args) -> Value {
+        if (args.size() < 2 || args[0].kind != Value::Kind::Str || args[1].kind != Value::Kind::Num)
+            throw RuntimeError(0, "pad_left expects (string, width, [fill])");
+        std::string s = args[0].s;
+        size_t w = static_cast<size_t>(args[1].n > 0 ? args[1].n : 0);
+        char fill = ' ';
+        if (args.size() >= 3 && args[2].kind == Value::Kind::Str && !args[2].s.empty())
+            fill = args[2].s[0];
+        if (s.size() >= w) return Value::Str(s);
+        return Value::Str(std::string(w - s.size(), fill) + s);
+    });
+    def("pad_right", [](std::vector<Value>& args) -> Value {
+        if (args.size() < 2 || args[0].kind != Value::Kind::Str || args[1].kind != Value::Kind::Num)
+            throw RuntimeError(0, "pad_right expects (string, width, [fill])");
+        std::string s = args[0].s;
+        size_t w = static_cast<size_t>(args[1].n > 0 ? args[1].n : 0);
+        char fill = ' ';
+        if (args.size() >= 3 && args[2].kind == Value::Kind::Str && !args[2].s.empty())
+            fill = args[2].s[0];
+        if (s.size() >= w) return Value::Str(s);
+        return Value::Str(s + std::string(w - s.size(), fill));
+    });
+def("starts_with", [](std::vector<Value>& args) -> Value {
         if (args.size() != 2 || args[0].kind != Value::Kind::Str || args[1].kind != Value::Kind::Str)
             throw RuntimeError(0, "starts_with expects two strings");
         return Value::Bool(args[0].s.compare(0, args[1].s.size(), args[1].s) == 0);
@@ -2529,6 +2784,34 @@ Interpreter::Interpreter() : rng(std::random_device{}()) {
         return args[0];
     });
 
+    def("union", [](std::vector<Value>& args) -> Value {
+        // alias
+        if (args.size() != 2) throw RuntimeError(0, "union expects two sets");
+        auto m = std::make_shared<std::map<std::string, Value>>(*args[0].map);
+        for (const auto& kv : *args[1].map) (*m)[kv.first] = kv.second;
+        (*m)["__set"] = Value::Bool(true);
+        return Value::Map(m);
+    });
+    def("intersect", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw RuntimeError(0, "intersect expects two sets");
+        auto m = std::make_shared<std::map<std::string, Value>>();
+        (*m)["__set"] = Value::Bool(true);
+        for (const auto& kv : *args[0].map) {
+            if (kv.first == "__set") continue;
+            if (args[1].map->count(kv.first)) (*m)[kv.first] = kv.second;
+        }
+        return Value::Map(m);
+    });
+    def("difference", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw RuntimeError(0, "difference expects two sets");
+        auto m = std::make_shared<std::map<std::string, Value>>();
+        (*m)["__set"] = Value::Bool(true);
+        for (const auto& kv : *args[0].map) {
+            if (kv.first == "__set") continue;
+            if (!args[1].map->count(kv.first)) (*m)[kv.first] = kv.second;
+        }
+        return Value::Map(m);
+    });
     def("set_union", [](std::vector<Value>& args) -> Value {
         if (args.size() != 2 || args[0].kind != Value::Kind::Map || args[1].kind != Value::Kind::Map)
             throw RuntimeError(0, "set_union expects two sets");
@@ -3188,42 +3471,162 @@ private:
             Token name = expect(Tok::Ident, "expected record name");
             expect(Tok::LBrace, "expected '{' after record name");
             std::vector<std::pair<std::string, std::string>> fields;
+            std::vector<std::shared_ptr<Function>> methods;
             while (!check(Tok::RBrace) && !check(Tok::Eof)) {
-                Token fname = expect(Tok::Ident, "expected field name");
-                expect(Tok::Colon, "expected ':' after field name");
-                Token ftype = expect(Tok::Ident, "expected field type");
-                fields.push_back({fname.lexeme, ftype.lexeme});
+                Token fname = expect(Tok::Ident, "expected field or method name");
+                if (check(Tok::Colon)) {
+                    advance();
+                    Token ftype = expect(Tok::Ident, "expected field type");
+                    fields.push_back({fname.lexeme, ftype.lexeme});
+                    if (!match(Tok::Comma)) break;
+                    continue;
+                }
+                // method: name(params) ==> body
+                expect(Tok::LParen, "expected ':' for field or '(' for method");
+                std::vector<Param> params;
+                // implicit self
+                Param selfP; selfP.name = "self"; params.push_back(selfP);
+                if (!check(Tok::RParen)) {
+                    do {
+                        Param p;
+                        p.name = expect(Tok::Ident, "expected param").lexeme;
+                        if (match(Tok::Colon)) p.type = expect(Tok::Ident, "type").lexeme;
+                        if (match(Tok::Define)) p.defaultValue = expression();
+                        params.push_back(std::move(p));
+                    } while (match(Tok::Comma) && !check(Tok::RParen));
+                }
+                expect(Tok::RParen, "expected ')' after method params");
+                expect(Tok::DefineFunc, "expected '==>' after method params");
+                std::shared_ptr<BlockStmt> body;
+                if (check(Tok::LBrace)) body = block();
+                else {
+                    ExprPtr e = expression();
+                    std::vector<StmtPtr> ss;
+                    ss.push_back(std::make_shared<ReturnStmt>(e, fname.line));
+                    body = std::make_shared<BlockStmt>(std::move(ss), fname.line);
+                }
+                auto fn = std::make_shared<Function>();
+                fn->name = fname.lexeme;
+                fn->params = std::move(params);
+                fn->body = body;
+                methods.push_back(fn);
                 if (!match(Tok::Comma)) break;
             }
             expect(Tok::RBrace, "expected '}' after record body");
-            return std::make_shared<RecordDeclStmt>(name.lexeme, std::move(fields), l);
+            auto stmt = std::make_shared<RecordDeclStmt>(name.lexeme, std::move(fields), l);
+            stmt->methods = std::move(methods);
+            return stmt;
+        }
+
+        if (check(Tok::Trait)) {
+            int l = advance().line;
+            Token name = expect(Tok::Ident, "expected trait name");
+            expect(Tok::LBrace, "expected '{' after trait name");
+            std::vector<TraitMethodSig> methods;
+            while (!check(Tok::RBrace) && !check(Tok::Eof)) {
+                TraitMethodSig sig;
+                sig.name = expect(Tok::Ident, "expected method name in trait").lexeme;
+                expect(Tok::LParen, "expected '(' after trait method name");
+                if (!check(Tok::RParen)) {
+                    do {
+                        sig.paramNames.push_back(expect(Tok::Ident, "expected param name").lexeme);
+                        if (match(Tok::Colon)) (void)expect(Tok::Ident, "expected type");
+                    } while (match(Tok::Comma) && !check(Tok::RParen));
+                }
+                expect(Tok::RParen, "expected ')' after trait method params");
+                if (match(Tok::Colon)) sig.returnType = expect(Tok::Ident, "expected return type").lexeme;
+                methods.push_back(std::move(sig));
+                if (!match(Tok::Comma)) break;
+            }
+            expect(Tok::RBrace, "expected '}' after trait body");
+            match(Tok::Semi);
+            return std::make_shared<TraitDeclStmt>(name.lexeme, std::move(methods), l);
+        }
+        if (check(Tok::Impl)) {
+            int l = advance().line;
+            std::string traitName, typeName;
+            Token first = expect(Tok::Ident, "expected type or trait name after impl");
+            if (match(Tok::For)) {
+                traitName = first.lexeme;
+                typeName = expect(Tok::Ident, "expected type name after 'for'").lexeme;
+            } else {
+                typeName = first.lexeme;
+            }
+            expect(Tok::LBrace, "expected '{' after impl header");
+            std::vector<std::shared_ptr<Function>> methods;
+            while (!check(Tok::RBrace) && !check(Tok::Eof)) {
+                Token mname = expect(Tok::Ident, "expected method name");
+                expect(Tok::LParen, "expected '(' after method name");
+                std::vector<Param> params;
+                Param selfP; selfP.name = "self"; params.push_back(selfP);
+                if (!check(Tok::RParen)) {
+                    do {
+                        Param p;
+                        p.name = expect(Tok::Ident, "expected param").lexeme;
+                        if (match(Tok::Colon)) p.type = expect(Tok::Ident, "type").lexeme;
+                        if (match(Tok::Define)) p.defaultValue = expression();
+                        params.push_back(std::move(p));
+                    } while (match(Tok::Comma) && !check(Tok::RParen));
+                }
+                expect(Tok::RParen, "expected ')'");
+                expect(Tok::DefineFunc, "expected '==>' after method params");
+                std::shared_ptr<BlockStmt> body;
+                if (check(Tok::LBrace)) body = block();
+                else {
+                    ExprPtr e = expression();
+                    std::vector<StmtPtr> ss;
+                    ss.push_back(std::make_shared<ReturnStmt>(e, mname.line));
+                    body = std::make_shared<BlockStmt>(std::move(ss), mname.line);
+                }
+                auto fn = std::make_shared<Function>();
+                fn->name = mname.lexeme;
+                fn->params = std::move(params);
+                fn->body = body;
+                methods.push_back(fn);
+                if (!match(Tok::Comma)) break;
+            }
+            expect(Tok::RBrace, "expected '}' after impl body");
+            return std::make_shared<ImplStmt>(traitName, typeName, std::move(methods), l);
         }
         if (check(Tok::Enum)) {
             int l = advance().line;
             Token name = expect(Tok::Ident, "expected enum name");
             expect(Tok::LBrace, "expected '{' after enum name");
-            std::vector<std::string> variants;
+            std::vector<EnumVariantDecl> variants;
             while (!check(Tok::RBrace) && !check(Tok::Eof)) {
-                variants.push_back(expect(Tok::Ident, "expected variant name").lexeme);
+                EnumVariantDecl vd;
+                vd.name = expect(Tok::Ident, "expected variant name").lexeme;
+                if (match(Tok::LParen)) {
+                    if (!check(Tok::RParen)) {
+                        do {
+                            vd.fields.push_back(expect(Tok::Ident, "expected field name").lexeme);
+                        } while (match(Tok::Comma) && !check(Tok::RParen));
+                    }
+                    expect(Tok::RParen, "expected ')' after variant fields");
+                }
+                variants.push_back(std::move(vd));
                 if (!match(Tok::Comma)) break;
             }
             expect(Tok::RBrace, "expected '}' after enum body");
-            // Expand to: Color := %{ Red: "Color.Red", ... }; + register type
-            auto m = std::make_shared<std::map<std::string, Value>>();
-            for (const auto& v : variants) {
-                (*m)[v] = Value::Str(name.lexeme + "." + v);
-            }
-            (*m)["__enum"] = Value::Str(name.lexeme);
-            auto mapVal = Value::Map(m);
-            // Store as a bind statement
-            return std::make_shared<BindStmt>(
-                std::make_shared<VarExpr>(name.lexeme, l),
-                "any", ":=",
-                std::make_shared<LiteralExpr>(mapVal, l),
-                l);
+            return std::make_shared<EnumDeclStmt>(name.lexeme, std::move(variants), l);
         }
         if (check(Tok::Import)) {
             int l = advance().line;
+            // import { a, b } from "path";
+            if (check(Tok::LBrace)) {
+                advance();
+                std::vector<std::string> names;
+                if (!check(Tok::RBrace)) {
+                    do {
+                        names.push_back(expect(Tok::Ident, "expected name in import list").lexeme);
+                    } while (match(Tok::Comma) && !check(Tok::RBrace));
+                }
+                expect(Tok::RBrace, "expected '}' after import list");
+                expect(Tok::From, "expected 'from' after import list");
+                Token pathTok = expect(Tok::String, "expected string path after 'from'");
+                expect(Tok::Semi, "expected ';' after import");
+                return std::make_shared<ImportStmt>(pathTok.str, std::move(names), l);
+            }
             Token pathTok = expect(Tok::String, "expected string path after 'import'");
             std::string asName;
             if (match(Tok::As)) asName = expect(Tok::Ident, "expected identifier after 'as'").lexeme;
@@ -3649,11 +4052,16 @@ private:
         while (match(Tok::Is)) {
             std::string tn;
             int ln = peek().line;
-            if (check(Tok::Ident)) tn = advance().lexeme;
+            if (check(Tok::Ident)) {
+                tn = advance().lexeme;
+                // Allow qualified: Shape.Circle
+                if (match(Tok::Dot)) {
+                    tn += ".";
+                    tn += expect(Tok::Ident, "expected name after '.' in type").lexeme;
+                }
+            }
             else if (check(Tok::Nil)) { advance(); tn = "nil"; }
-            else if (check(Tok::True) || check(Tok::False)) {
-                throw ParseError(peek().line, "expected type name after 'is'");
-            } else {
+            else {
                 throw ParseError(peek().line, "expected type name after 'is'");
             }
             e = std::make_shared<IsExpr>(e, tn, ln);
@@ -3938,7 +4346,7 @@ private:
         if (check(Tok::RParen)) {
             advance();
             // empty tuple ()
-            return std::make_shared<ArrayExpr>(std::vector<ArrayExpr::Elem>{}, l);
+            return std::make_shared<ArrayExpr>(std::vector<ArrayExpr::Elem>{}, l, true);
         }
         ExprPtr e = expression();
         if (match(Tok::Comma)) {
@@ -3951,7 +4359,7 @@ private:
                 } while (match(Tok::Comma) && !check(Tok::RParen));
             }
             expect(Tok::RParen, "expected ')' after tuple");
-            return std::make_shared<ArrayExpr>(std::move(elems), l);
+            return std::make_shared<ArrayExpr>(std::move(elems), l, true);
         }
         expect(Tok::RParen, "expected ')'");
         return e;
@@ -4058,12 +4466,24 @@ private:
         if (check(Tok::Nil))   { advance(); p.kind = Pattern::PKind::Literal; p.literal = Value::Nil(); return p; }
         if (check(Tok::Ident)) {
             Token t = advance();
-            // Enum variant: Color.Red
+            // Enum variant: Color.Red or Shape.Circle(r, g)
             if (check(Tok::Dot)) {
                 advance();
                 Token var = expect(Tok::Ident, "expected variant after '.'");
+                std::string tag = t.lexeme + "." + var.lexeme;
+                if (match(Tok::LParen)) {
+                    p.kind = Pattern::PKind::EnumData;
+                    p.enumTag = tag;
+                    if (!check(Tok::RParen)) {
+                        do {
+                            p.elems.push_back(parsePattern());
+                        } while (match(Tok::Comma) && !check(Tok::RParen));
+                    }
+                    expect(Tok::RParen, "expected ')' after enum pattern fields");
+                    return p;
+                }
                 p.kind = Pattern::PKind::Literal;
-                p.literal = Value::Str(t.lexeme + "." + var.lexeme);
+                p.literal = Value::Str(tag);
                 return p;
             }
             if (t.lexeme == "_") { p.kind = Pattern::PKind::Wildcard; return p; }
@@ -4119,6 +4539,16 @@ EnvPtr Interpreter::loadModule(const std::string& path, int line) {
     if (it != moduleCache.end()) return it->second;
 
     std::ifstream in(full, std::ios::binary);
+    if (!in && full != path) {
+        in.open(path, std::ios::binary);
+        if (in) full = path;
+    }
+    // also try cwd/std/... and parent/std/...
+    if (!in) {
+        std::string alt = std::string("./") + path;
+        in.open(alt, std::ios::binary);
+        if (in) full = alt;
+    }
     if (!in) throw RuntimeError(line, "cannot open module '" + path + "'");
     std::stringstream ss; ss << in.rdbuf();
     std::string src = ss.str();
@@ -4229,6 +4659,7 @@ static int runSourceOn(Interpreter& I, const std::string& src) {
     return 1;
 }
 
+
 static void repl() {
     std::cout << "Vela REPL. Type .help for commands, 'exit' to leave.\n";
     Interpreter I;
@@ -4241,16 +4672,32 @@ static void repl() {
         if (pending.empty()) {
             if (line == "exit" || line == "quit") break;
             if (line == ".help") {
-                std::cout << "  .help     this help\n"
-                          << "  .vars     list user bindings\n"
-                          << "  .clear    reset interpreter state\n"
-                          << "  exit      leave REPL\n";
+                std::cout << "  .help          this help\n"
+                          << "  .vars          list user bindings\n"
+                          << "  .type <expr>   show type of expression\n"
+                          << "  .load <file>   run a .vel file in this session\n"
+                          << "  .clear         reset interpreter state\n"
+                          << "  exit           leave REPL\n";
+                continue;
+            }
+            if (line.rfind(".type ", 0) == 0) {
+                std::string expr = line.substr(6);
+                while (!expr.empty() && expr[0] == ' ') expr.erase(0, 1);
+                runSourceOn(I, std::string("print(type((") + expr + ")));");
+                continue;
+            }
+            if (line.rfind(".load ", 0) == 0) {
+                std::string path = line.substr(6);
+                while (!path.empty() && path[0] == ' ') path.erase(0, 1);
+                std::ifstream in(path);
+                if (!in) { std::cout << "cannot open " << path << "\n"; continue; }
+                std::stringstream ss; ss << in.rdbuf();
+                runSourceOn(I, ss.str());
                 continue;
             }
             if (line == ".vars") {
                 for (const auto& kv : I.global->vars) {
                     if (kv.first.size() >= 2 && kv.first[0] == '_' && kv.first[1] == '_') continue;
-                    // skip native bulk noise: show non-fn or named fn
                     if (kv.second.kind == Value::Kind::Native) continue;
                     std::cout << "  " << kv.first << " = " << kv.second.toString(true) << '\n';
                 }
@@ -4306,12 +4753,428 @@ static std::string shellQuote(const std::string& s) {
     return o;
 }
 
-static std::string cppRawEscape(const std::string& src) {
-    // Build a C++ raw string; avoid delimiter collision
-    std::string delim = "VELA_SRC";
-    while (src.find(")" + delim + "\"") != std::string::npos) delim += "X";
-    return "R\"" + delim + "(" + src + ")" + delim + "\"";
-}
+// =============================================================================
+// AST → C++ code generator (core subset for `vela build`)
+// =============================================================================
+struct Codegen {
+    std::ostringstream o;
+    std::vector<std::string> errors;
+    int tmp = 0;
+    int indv = 0;
+
+    std::string T() { return "t" + std::to_string(tmp++); }
+    void I() { for (int i = 0; i < indv; ++i) o << "  "; }
+    void L(const std::string& s) { I(); o << s << '\n'; }
+    void err(const std::string& m) { errors.push_back(m); }
+
+    static std::string esc(const std::string& s) {
+        std::string r;
+        for (unsigned char c : s) {
+            if (c == '\\') r += "\\\\";
+            else if (c == '"') r += "\\\"";
+            else if (c == '\n') r += "\\n";
+            else if (c == '\t') r += "\\t";
+            else r += static_cast<char>(c);
+        }
+        return r;
+    }
+
+    std::string lit(const Value& v) {
+        if (v.kind == Value::Kind::Nil) return "Value::Nil()";
+        if (v.kind == Value::Kind::Bool) return v.b ? "Value::Bool(true)" : "Value::Bool(false)";
+        if (v.kind == Value::Kind::Num) {
+            std::ostringstream ss;
+            ss.precision(17);
+            ss << "Value::Num(" << v.n << ")";
+            return ss.str();
+        }
+        if (v.kind == Value::Kind::Str)
+            return "Value::Str(\"" + esc(v.s) + "\")";
+        err("codegen: unsupported literal");
+        return "Value::Nil()";
+    }
+
+    std::string ex(const ExprPtr& e) {
+        if (!e) { err("codegen: null expr"); return "Value::Nil()"; }
+        if (auto x = dynamic_cast<LiteralExpr*>(e.get())) return lit(x->value);
+        if (auto x = dynamic_cast<VarExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + ";");
+            L("{ Value* _p = env->lookup(\"" + esc(x->name) + "\");");
+            L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) +
+              ", \"undefined variable '" + esc(x->name) + "'\");");
+            L("  " + t + " = *_p;");
+            L("}");
+            return t;
+        }
+        if (auto x = dynamic_cast<UnaryExpr*>(e.get())) {
+            std::string a = ex(x->operand);
+            std::string t = T();
+            if (x->op == "-") {
+                L("Value " + t + " = Value::Num(-(" + a + ").n);");
+            } else if (x->op == "!") {
+                L("Value " + t + " = Value::Bool(!truthy(" + a + "));");
+            } else {
+                err("codegen: unsupported unary '" + x->op + "' at line " + std::to_string(x->line));
+                L("Value " + t + " = Value::Nil();");
+            }
+            return t;
+        }
+        if (auto x = dynamic_cast<BinaryExpr*>(e.get())) {
+            std::string t = T();
+            if (x->op == "??") {
+                std::string a = ex(x->left);
+                L("Value " + t + " = " + a + ";");
+                L("if ((" + t + ").isNil()) { " + t + " = " + ex(x->right) + "; }");
+                return t;
+            }
+            if (x->op == "&&") {
+                std::string a = ex(x->left);
+                L("Value " + t + ";");
+                L("if (!truthy(" + a + ")) { " + t + " = Value::Bool(false); }");
+                L("else { " + t + " = Value::Bool(truthy(" + ex(x->right) + ")); }");
+                return t;
+            }
+            if (x->op == "||") {
+                std::string a = ex(x->left);
+                L("Value " + t + ";");
+                L("if (truthy(" + a + ")) { " + t + " = Value::Bool(true); }");
+                L("else { " + t + " = Value::Bool(truthy(" + ex(x->right) + ")); }");
+                return t;
+            }
+            std::string a = ex(x->left);
+            std::string b = ex(x->right);
+            L("Value " + t + " = applyBinary(\"" + esc(x->op) + "\", " + a + ", " + b + ", " +
+              std::to_string(x->line) + ");");
+            return t;
+        }
+        if (auto x = dynamic_cast<CallExpr*>(e.get())) {
+            auto ve = dynamic_cast<VarExpr*>(x->callee.get());
+            if (!ve) {
+                err("codegen: only simple named calls supported at line " + std::to_string(x->line));
+                return "Value::Nil()";
+            }
+            std::string vec = T();
+            std::string t = T();
+            L("std::vector<Value> " + vec + ";");
+            for (auto& a : x->args) {
+                if (!a.name.empty())
+                    err("codegen: named arguments not supported at line " + std::to_string(x->line));
+                L(vec + ".push_back(" + ex(a.expr) + ");");
+            }
+            L("Value " + t + ";");
+            L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
+            L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) +
+              ", \"undefined function '" + esc(ve->name) + "'\");");
+            L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
+            L("}");
+            return t;
+        }
+        if (auto x = dynamic_cast<ArrayExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = Value::Arr(std::make_shared<std::vector<Value>>());");
+            for (auto& el : x->elems) {
+                if (el.spread) {
+                    err("codegen: array spread not supported at line " + std::to_string(x->line));
+                    continue;
+                }
+                L(t + ".arr->push_back(" + ex(el.expr) + ");");
+            }
+            return t;
+        }
+        if (auto x = dynamic_cast<MapExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = Value::Map(std::make_shared<std::map<std::string, Value>>());");
+            for (auto& pr : x->pairs) {
+                // key must be literal string for codegen
+                auto litk = dynamic_cast<LiteralExpr*>(pr.first.get());
+                if (!litk || litk->value.kind != Value::Kind::Str) {
+                    err("codegen: map keys must be string literals at line " + std::to_string(x->line));
+                    continue;
+                }
+                L("(*" + t + ".map)[\"" + esc(litk->value.s) + "\"] = " + ex(pr.second) + ";");
+            }
+            return t;
+        }
+        if (auto x = dynamic_cast<IndexExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = indexGet(" + ex(x->object) + ", " + ex(x->index) + ", " +
+              std::to_string(x->line) + ");");
+            return t;
+        }
+        if (auto x = dynamic_cast<StringInterpExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = Value::Str(\"\");");
+            for (auto& p : x->parts) {
+                if (p.isLiteral) L(t + ".s += \"" + esc(p.text) + "\";");
+                else L(t + ".s += " + ex(p.expr) + ".toString(false);");
+            }
+            return t;
+        }
+                if (auto x = dynamic_cast<PipeExpr*>(e.get())) {
+            // x |> f  or  x |> f(a)  →  treat right as CallExpr or VarExpr
+            if (auto call = dynamic_cast<CallExpr*>(x->right.get())) {
+                auto ve = dynamic_cast<VarExpr*>(call->callee.get());
+                if (!ve) { err("codegen: pipe call must be named at line " + std::to_string(x->line)); return "Value::Nil()"; }
+                std::string vec = T(); std::string t = T();
+                L("std::vector<Value> " + vec + ";");
+                L(vec + ".push_back(" + ex(x->left) + ");");
+                for (auto& a : call->args) {
+                    if (!a.name.empty()) err("codegen: named args in pipe at line " + std::to_string(x->line));
+                    L(vec + ".push_back(" + ex(a.expr) + ");");
+                }
+                L("Value " + t + ";");
+                L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
+                L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined\");");
+                L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
+                L("}");
+                return t;
+            }
+            if (auto ve = dynamic_cast<VarExpr*>(x->right.get())) {
+                std::string vec = T(); std::string t = T();
+                L("std::vector<Value> " + vec + ";");
+                L(vec + ".push_back(" + ex(x->left) + ");");
+                L("Value " + t + ";");
+                L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
+                L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined\");");
+                L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
+                L("}");
+                return t;
+            }
+            err("codegen: unsupported pipe form at line " + std::to_string(x->line));
+            return "Value::Nil()";
+        }
+        if (auto x = dynamic_cast<FieldExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = indexGet(" + ex(x->object) + ", Value::Str(\"" + esc(x->field) + "\"), " +
+              std::to_string(x->line) + ");");
+            return t;
+        }
+        if (auto x = dynamic_cast<TernaryExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + ";");
+            L("if (truthy(" + ex(x->cond) + ")) { " + t + " = " + ex(x->thenE) + "; }");
+            L("else { " + t + " = " + ex(x->elseE) + "; }");
+            return t;
+        }
+        if (auto x = dynamic_cast<AssignExpr*>(e.get())) {
+            auto ve = dynamic_cast<VarExpr*>(x->target.get());
+            if (!ve) {
+                err("codegen: compound assign only for names at line " + std::to_string(x->line));
+                return "Value::Nil()";
+            }
+            std::string v = ex(x->value);
+            std::string t = T();
+            if (x->op == "+=" || x->op == "-=" || x->op == "*=" || x->op == "/=" || x->op == "%=") {
+                std::string binop = x->op.substr(0, 1);
+                L("Value " + t + ";");
+                L("{ Value* _p = env->lookup(\"" + esc(ve->name) + "\");");
+                L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined variable\");");
+                L("  " + t + " = applyBinary(\"" + binop + "\", *_p, " + v + ", " + std::to_string(x->line) + ");");
+                L("  Env* _o = env->owner(\"" + esc(ve->name) + "\");");
+                L("  if (!_o || _o->consts.count(\"" + esc(ve->name) + "\")) throw RuntimeError(" +
+                  std::to_string(x->line) + ", \"cannot assign\");");
+                L("  _o->vars[\"" + esc(ve->name) + "\"] = " + t + ";");
+                L("}");
+            } else {
+                err("codegen: unsupported assign op at line " + std::to_string(x->line));
+                L("Value " + t + " = Value::Nil();");
+            }
+            return t;
+        }
+        if (auto x = dynamic_cast<RangeExpr*>(e.get())) {
+            std::string t = T();
+            std::string a = ex(x->start);
+            std::string b = ex(x->end);
+            std::string st = x->step ? ex(x->step) : "Value::Num(1)";
+            L("Value " + t + " = Value::Range((" + a + ").n, (" + b + ").n, " +
+              std::string(x->inclusive ? "true" : "false") + ", (" + st + ").n);");
+            return t;
+        }
+        if (auto x = dynamic_cast<IsExpr*>(e.get())) {
+            std::string t = T();
+            L("Value " + t + " = Value::Bool(typeName(" + ex(x->operand) + ") == \"" + esc(x->typeName) + "\");");
+            return t;
+        }
+        err("codegen: unsupported expression at line " + std::to_string(e->line));
+        return "Value::Nil()";
+    }
+
+    void st(const StmtPtr& s) {
+        if (!s) return;
+        if (auto x = dynamic_cast<ExprStmt*>(s.get())) {
+            (void)ex(x->expr);
+            return;
+        }
+        if (auto x = dynamic_cast<BindStmt*>(s.get())) {
+            auto ve = dynamic_cast<VarExpr*>(x->target.get());
+            if (!ve) {
+                err("codegen: only simple name assignment at line " + std::to_string(x->line));
+                return;
+            }
+            std::string v = ex(x->value);
+            if (x->op == ":=") {
+                L("env->define(\"" + esc(ve->name) + "\", " + v + ", true);");
+            } else if (x->op == "+=" || x->op == "-=" || x->op == "*=" || x->op == "/=" || x->op == "%=") {
+                std::string binop = x->op.substr(0, 1);
+                L("{ Value* _p = env->lookup(\"" + esc(ve->name) + "\");");
+                L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined variable\");");
+                L("  Value _nv = applyBinary(\"" + binop + "\", *_p, " + v + ", " + std::to_string(x->line) + ");");
+                L("  Env* _o = env->owner(\"" + esc(ve->name) + "\");");
+                L("  if (_o) { if (_o->consts.count(\"" + esc(ve->name) + "\")) throw RuntimeError(" + std::to_string(x->line) + ", \"immutable\"); _o->vars[\"" + esc(ve->name) + "\"] = _nv; }");
+                L("}");
+            } else {
+                L("{ Env* _o = env->owner(\"" + esc(ve->name) + "\");");
+                L("  if (_o) { if (_o->consts.count(\"" + esc(ve->name) +
+                  "\")) throw RuntimeError(" + std::to_string(x->line) +
+                  ", \"immutable\"); _o->vars[\"" + esc(ve->name) + "\"] = " + v + "; }");
+                L("  else env->define(\"" + esc(ve->name) + "\", " + v + ", false);");
+                L("}");
+            }
+            return;
+        }
+        if (auto x = dynamic_cast<IfStmt*>(s.get())) {
+            L("if (truthy(" + ex(x->cond) + ")) {");
+            indv++;
+            block(x->thenB);
+            indv--;
+            if (x->elseB) {
+                L("} else {");
+                indv++;
+                st(x->elseB);
+                indv--;
+            }
+            L("}");
+            return;
+        }
+        if (auto x = dynamic_cast<WhileStmt*>(s.get())) {
+            L("while (true) {");
+            indv++;
+            L("if (!truthy(" + ex(x->cond) + ")) break;");
+            L("try {");
+            indv++;
+            block(x->body);
+            indv--;
+            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
+            indv--;
+            L("}");
+            return;
+        }
+        if (auto x = dynamic_cast<ForRangeStmt*>(s.get())) {
+            std::string a = ex(x->start);
+            std::string b = ex(x->end);
+            std::string stv = x->step ? ex(x->step) : "Value::Num(1)";
+            std::string i = T();
+            L("for (double " + i + " = (" + a + ").n; " +
+              (x->inclusive ? i + " <= (" + b + ").n" : i + " < (" + b + ").n") +
+              "; " + i + " += (" + stv + ").n) {");
+            indv++;
+            L("EnvPtr _inner = std::make_shared<Env>(env);");
+            L("_inner->define(\"" + esc(x->var) + "\", Value::Num(" + i + "), false);");
+            L("{ EnvPtr env = _inner;");
+            L("try {");
+            indv++;
+            block(x->body);
+            indv--;
+            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
+            L("}");
+            indv--;
+            L("}");
+            return;
+        }
+        if (auto x = dynamic_cast<ForEachStmt*>(s.get())) {
+            std::string it = ex(x->iterable);
+            L("{ Value _it = " + it + ";");
+            L("  if (_it.kind != Value::Kind::Arr) throw RuntimeError(" +
+              std::to_string(x->line) + ", \"codegen repeat expects array\");");
+            L("  auto _snap = *_it.arr;");
+            L("  for (const auto& _el : _snap) {");
+            indv += 2;
+            L("EnvPtr _inner = std::make_shared<Env>(env);");
+            if (!x->destructure.empty()) {
+                L("if (_el.kind != Value::Kind::Arr) throw RuntimeError(" +
+                  std::to_string(x->line) + ", \"destructure needs array\");");
+                for (size_t di = 0; di < x->destructure.size(); di++) {
+                    L("_inner->define(\"" + esc(x->destructure[di]) +
+                      "\", " + std::to_string(di) + " < _el.arr->size() ? (*_el.arr)[" +
+                      std::to_string(di) + "] : Value::Nil(), false);");
+                }
+            } else {
+                L("_inner->define(\"" + esc(x->var) + "\", _el, false);");
+            }
+            L("{ EnvPtr env = _inner;");
+            L("try {");
+            indv++;
+            block(x->body);
+            indv--;
+            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
+            L("}");
+            indv -= 2;
+            L("  }");
+            L("}");
+            return;
+        }
+        if (auto x = dynamic_cast<ReturnStmt*>(s.get())) {
+            if (x->value) L("throw ReturnSignal{" + ex(x->value) + "};");
+            else L("throw ReturnSignal{Value::Nil()};");
+            return;
+        }
+        if (auto x = dynamic_cast<FuncDeclStmt*>(s.get())) {
+            std::string nf = T();
+            L("{ auto " + nf + " = std::make_shared<NativeFunction>();");
+            L("  EnvPtr _clos_" + nf + " = env;");
+            L("  " + nf + "->fn = [_clos_" + nf + "](std::vector<Value>& args) -> Value {");
+            indv++;
+            L("EnvPtr env = std::make_shared<Env>(_clos_" + nf + ");");
+            for (size_t i = 0; i < x->params.size(); i++) {
+                L("env->define(\"" + esc(x->params[i].name) + "\", args.size() > " +
+                  std::to_string(i) + "u ? args[" + std::to_string(i) + "] : Value::Nil(), false);");
+            }
+            L("try {");
+            indv++;
+            block(x->body);
+            L("return Value::Nil();");
+            indv--;
+            L("} catch (const ReturnSignal& r) { return r.value; }");
+            indv--;
+            L("  };");
+            L("  env->define(\"" + esc(x->name) + "\", Value::Native(" + nf + "), true);");
+            L("}");
+            return;
+        }
+        if (auto x = dynamic_cast<BlockStmt*>(s.get())) {
+            for (auto& u : x->stmts) st(u);
+            return;
+        }
+        if (auto x = dynamic_cast<AssertStmt*>(s.get())) {
+            L("if (!truthy(" + ex(x->cond) + ")) {");
+            if (x->message) {
+                L("  throw RuntimeError(" + std::to_string(x->line) + ", (" + ex(x->message) + ").toString(false));");
+            } else {
+                L("  throw RuntimeError(" + std::to_string(x->line) + ", \"assertion failed\");");
+            }
+            L("}");
+            return;
+        }
+        err("codegen: unsupported statement at line " + std::to_string(s->line) +
+            " (supported: bind, functions, print/calls, when, loop, repeat, assert, arrays/maps)");
+    }
+
+    void block(const std::shared_ptr<BlockStmt>& b) {
+        if (!b) return;
+        for (auto& x : b->stmts) st(x);
+    }
+
+    std::string emitBody(const std::vector<StmtPtr>& prog) {
+        o.str("");
+        o.clear();
+        tmp = 0;
+        indv = 1;
+        errors.clear();
+        for (auto& s : prog) st(s);
+        return o.str();
+    }
+};
 
 static int buildNative(const std::string& velPath, const std::string& outPath) {
     std::ifstream in(velPath, std::ios::binary);
@@ -4323,52 +5186,105 @@ static int buildNative(const std::string& velPath, const std::string& outPath) {
     ss << in.rdbuf();
     std::string src = ss.str();
 
-    // Locate vela.cpp next to this executable's build tree: prefer ./vela.cpp
-    std::string runtimeCpp = "vela.cpp";
+    std::vector<StmtPtr> prog;
+    try {
+        setSource(src);
+        Lexer lex(src);
+        Parser parser(lex.scan());
+        prog = parser.parseProgram();
+    } catch (const ParseError& e) {
+        reportError("parse error", e.line, e.what());
+        std::cerr << "error: cannot build — fix parse errors first\n";
+        return 1;
+    }
+
     {
-        std::ifstream test(runtimeCpp);
+        std::ifstream test("vela.cpp");
         if (!test) {
-            std::cerr << "error: cannot find vela.cpp in the current directory "
-                         "(run build from the Vela project root)\n";
+            std::cerr << "error: cannot find vela.cpp (run build from project root)\n";
             return 1;
         }
     }
 
-    std::string embPath = outPath + ".embed.cpp";
-    std::string base = dirOf(velPath);
+    Codegen cg;
+    std::string body = cg.emitBody(prog);
+    if (!cg.errors.empty()) {
+        std::cerr << "codegen: unsupported constructs (no silent embed fallback):\n";
+        for (const auto& e : cg.errors)
+            std::cerr << "  - " << e << "\n";
+        std::cerr << "hint: use ./vela file.vel for full language; "
+                     "build supports core subset only\n";
+        return 1;
+    }
+
+    std::string genPath = outPath + ".gen.cpp";
     {
-        std::ofstream out(embPath);
-        if (!out) {
-            std::cerr << "error: cannot write '" << embPath << "'\n";
-            return 1;
-        }
-        out << "// Auto-generated by: vela build\n";
-        out << "// Embeds Vela source and links with the Vela runtime (vela.cpp).\n";
-        out << "#include <string>\n";
-        out << "static const char* VELA_EMBEDDED = " << cppRawEscape(src) << ";\n";
-        out << "static const char* VELA_BASEDIR = " << cppRawEscape(base) << ";\n";
-        out << "const char* vela_embedded_source() { return VELA_EMBEDDED; }\n";
-        out << "const char* vela_embedded_dir() { return VELA_BASEDIR; }\n";
+        std::ofstream out(genPath);
+        out << "// Generated by Vela — AST lowered to C++ (core subset)\n";
+        out << "// Not source embedding: statements are compiled C++ using the Value runtime.\n";
+        out << "#include <cmath>\n#include <iostream>\n#include <map>\n#include <memory>\n";
+        out << "#include <string>\n#include <vector>\n";
+        out << "#define VELA_CODEGEN_APP 1\n";
+        out << "// Types and helpers come from linking with vela.cpp\n";
+        out << "struct Value; struct Interpreter; struct Env;\n";
+        out << "using EnvPtr = std::shared_ptr<Env>;\n";
+        out << "void vela_codegen_entry();\n";
+        out << "int main() { vela_codegen_entry(); return 0; }\n";
     }
 
-    // Compile embed + runtime as standalone binary
-    std::string cmd = "g++ -std=c++17 -O2 -DVELA_STANDALONE -o "
-        + shellQuote(outPath) + " "
-        + shellQuote(embPath) + " "
-        + shellQuote(runtimeCpp);
+    // Better approach: single TU — append generated body into a file that
+    // is compiled WITH vela.cpp via -include or combined.
+    // Write gen as a function body included from vela.cpp
+    {
+        std::ofstream out(genPath);
+        out << "// Generated by Vela AST→C++ codegen\n";
+        out << body;
+    }
+
+    // Compile: define VELA_CODEGEN_APP and VELA_GEN_INC path
+    std::string cmd = "g++ -std=c++17 -O2 -DVELA_CODEGEN_APP -DVELA_GEN_INC=\\\"" + genPath +
+                      "\\\" -o " + shellQuote(outPath) + " vela.cpp";
+    std::cerr << "codegen: AST → C++ (core subset)\n";
     std::cerr << "compiling: " << cmd << "\n";
     int rc = std::system(cmd.c_str());
+    std::remove(genPath.c_str());
     if (rc != 0) {
-        std::cerr << "error: C++ compile failed (is g++ installed?)\n";
+        std::cerr << "error: C++ compile failed\n";
         return 1;
     }
     std::cerr << "wrote native binary: " << outPath << "\n";
-    // keep embed file for debugging? remove for cleanliness
-    std::remove(embPath.c_str());
     return 0;
 }
 
-#ifdef VELA_STANDALONE
+#ifdef VELA_CODEGEN_APP
+// Generated program body is #include'd — AST lowered to C++ using Value runtime
+static void vela_codegen_entry() {
+    Interpreter I;
+    g_activeInterp = &I;
+    I.dirStack.push_back(".");
+    EnvPtr env = I.global;
+    try {
+#ifdef VELA_GEN_INC
+#include VELA_GEN_INC
+#else
+#error "VELA_GEN_INC not defined"
+#endif
+    } catch (const RuntimeError& e) {
+        reportError("runtime error", e.line, e.what());
+        std::exit(1);
+    } catch (const ErrorSignal& e) {
+        reportError("runtime error", 0, e.value.toString(false));
+        std::exit(1);
+    } catch (const ReturnSignal&) {
+        // ignore top-level return
+    }
+    g_activeInterp = nullptr;
+}
+int main() {
+    vela_codegen_entry();
+    return 0;
+}
+#elif defined(VELA_STANDALONE)
 const char* vela_embedded_source();
 const char* vela_embedded_dir();
 int main() {

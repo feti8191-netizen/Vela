@@ -297,3 +297,96 @@ Not part of the current language: static generics, traits, enums with associated
 Vela is dynamically typed. Names are immutable or mutable by design. Functions are first-class. Data is built from numbers, strings, arrays, maps, sets, ranges, records, and enums. Control uses conditionals, loops, pattern matching, errors, and defer. Modules split programs across files. Builtins reach files, environment, and processes on the host.
 
 The meaning of a program is sequential evaluation of its statements under nested environments until the program ends or an uncaught error stops it.
+
+
+## Enums with associated data
+
+```vela
+enum Shape { Circle(r), Rect(w, h), Point }
+
+area(s) ==> match s {
+    Shape.Circle(r) => PI * r * r,
+    Shape.Rect(w, h) => w * h,
+    Shape.Point => 0,
+    _ => -1,
+};
+```
+
+Unit variants (no fields) stay strings like `Color.Red`. Data variants are maps with `__tag` and named fields.
+
+## Record methods
+
+```vela
+record Point {
+    x: num,
+    y: num,
+    dist() ==> sqrt(self.x ** 2 + self.y ** 2),
+}
+p := new Point{x: 3, y: 4};
+print(p.dist());
+```
+
+Methods receive the instance as `self` automatically.
+
+## Tuples
+
+```vela
+t := (1, "two", true);
+print(t[0], t[1]);
+[a, b, c] := t;
+```
+
+Tuple literals use parentheses with at least one comma (or empty `()`).
+
+
+## Traits and impl
+
+```vela
+trait Show {
+    show() : str,
+}
+record Point { x: num, y: num }
+impl Show for Point {
+    show() ==> "Point(${self.x}, ${self.y})",
+}
+impl Point {
+    dist() ==> sqrt(self.x ** 2 + self.y ** 2),
+}
+```
+
+`impl Trait for Type` requires all trait methods. `impl Type` adds inherent methods.
+
+## Map iteration
+
+```vela
+repeat [k, v] in %{a: 1, b: 2} {
+    print(k, v);
+}
+```
+
+## Multiple results
+
+Return a tuple and destructure:
+
+```vela
+pair() ==> -> (1, 2);
+[a, b] := pair();
+```
+
+
+## Selective import
+
+```vela
+import { upper, pad } from "std/str.vel";
+print(upper("hi"));
+```
+
+Only listed names are bound. Missing names are a runtime error.
+
+## Set operations
+
+```vela
+union(#{1,2}, #{2,3})
+intersect(#{1,2}, #{2,3})
+difference(#{1,2}, #{2,3})
+```

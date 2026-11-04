@@ -1,0 +1,7 @@
+a := #{1, 2, 3};
+b := #{3, 4, 5};
+print("union", union(a, b));
+print("intersect", intersect(a, b));
+print("difference", difference(a, b));
+// same as set_union / set_intersect / set_difference
+print(set_union(a, b));

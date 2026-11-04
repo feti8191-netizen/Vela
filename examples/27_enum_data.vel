@@ -1,0 +1,13 @@
+// Enums with associated data + match unpacking
+enum Shape { Circle(r), Rect(w, h), Point }
+
+area(s) ==> match s {
+    Shape.Circle(r) => PI * r * r,
+    Shape.Rect(w, h) => w * h,
+    Shape.Point => 0,
+    _ => -1,
+};
+
+print(area(Shape.Circle(2)));
+print(area(Shape.Rect(3, 4)));
+print(area(Shape.Point));
