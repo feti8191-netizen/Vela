@@ -1,0 +1,19 @@
+// Readable Vela: and / or, is empty, stop / next
+x := 3;
+when x > 0 and x < 10 {
+  say("in range");
+}
+
+s := "";
+when s is empty {
+  say("empty string");
+}
+when [1, 2] is not empty {
+  say("list has values");
+}
+
+repeat i from 0 through 4 {
+  when i == 2 { next; }
+  when i == 4 { say("stop at", i); stop; }
+  say("i", i);
+}

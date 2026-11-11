@@ -304,7 +304,12 @@ private:
         else if (text == "through") type = Tok::Through;
         else if (text == "in")      type = Tok::In;
         else if (text == "bail")    type = Tok::Bail;
+        else if (text == "stop")    type = Tok::Bail;   // readable alias
         else if (text == "skip")    type = Tok::Skip;
+        else if (text == "next")    type = Tok::Skip;   // readable alias
+        else if (text == "and")     type = Tok::AndAnd; // readable &&
+        else if (text == "or")      type = Tok::OrOr;   // readable ||
+        else if (text == "not")     type = Tok::Bang;   // readable !
         else if (text == "assert")  type = Tok::Assert;
         else if (text == "is")      type = Tok::Is;
         else if (text == "throw")   type = Tok::Throw;
@@ -328,6 +333,9 @@ private:
         else if (text == "nil")     type = Tok::Nil;
 
         Token t; t.type = type; t.lexeme = text; t.line = l;
+        if (type == Tok::Bang && text == "not") t.lexeme = "!";
+        if (type == Tok::AndAnd && text == "and") t.lexeme = "&&";
+        if (type == Tok::OrOr && text == "or") t.lexeme = "||";
         return t;
     }
 
@@ -1062,7 +1070,27 @@ static long long toIndex(double d, int line) {
 }
 
 static Value applyBinary(const std::string& op, const Value& a, const Value& b, int line) {
+    if (op == "in") {
+        // value in collection (readable membership)
+        if (b.kind == Value::Kind::Arr) {
+            for (const auto& v : *b.arr)
+                if (valuesEqual(v, a)) return Value::Bool(true);
+            return Value::Bool(false);
+        }
+        if (b.kind == Value::Kind::Str && a.kind == Value::Kind::Str)
+            return Value::Bool(b.s.find(a.s) != std::string::npos);
+        if (b.kind == Value::Kind::Map) {
+            if (b.map->count("__set"))
+                return Value::Bool(b.map->count(a.toString(false)) > 0);
+            if (a.kind == Value::Kind::Str)
+                return Value::Bool(b.map->count(a.s) > 0);
+            return Value::Bool(false);
+        }
+        throw RuntimeError(line, "'in' expects a list, string, map, or set on the right — example: 3 in nums");
+    }
     if (op == "+") {
+        if (a.kind == Value::Kind::Nil || b.kind == Value::Kind::Nil)
+            throw RuntimeError(line, "cannot use '+' with nil — check try_num(...) or make sure both sides have values");
         if (a.kind == Value::Kind::Str || b.kind == Value::Kind::Str) {
             return Value::Str(a.toString(false) + b.toString(false));
         }
@@ -1090,8 +1118,10 @@ static Value applyBinary(const std::string& op, const Value& a, const Value& b, 
         throw RuntimeError(line, "operator '" + op + "' expects two numbers or two strings");
     }
 
+    if (a.kind == Value::Kind::Nil || b.kind == Value::Kind::Nil)
+        throw RuntimeError(line, "cannot use '" + op + "' with nil — use try_num(...) and check for nil before math");
     if (a.kind != Value::Kind::Num || b.kind != Value::Kind::Num) {
-        throw RuntimeError(line, "operator '" + op + "' expects numbers");
+        throw RuntimeError(line, "operator '" + op + "' expects numbers (got " + typeName(a) + " and " + typeName(b) + ")");
     }
     double x = a.n, y = b.n;
     if (op == "-")  return Value::Num(x - y);
@@ -1449,6 +1479,25 @@ Value SliceExpr::eval(const EnvPtr& env, Interpreter& I) {
 Value IsExpr::eval(const EnvPtr& env, Interpreter& I) {
     (void)I;
     Value v = operand->eval(env, I);
+
+    // Readable emptiness checks: x is empty / x is not empty
+    if (this->typeName == "empty" || this->typeName == "not_empty") {
+        bool emp = false;
+        if (v.kind == Value::Kind::Nil) emp = true;
+        else if (v.kind == Value::Kind::Str) emp = v.s.empty();
+        else if (v.kind == Value::Kind::Arr) emp = v.arr->empty();
+        else if (v.kind == Value::Kind::Map) {
+            // ignore internal markers for sets/records
+            size_t n = 0;
+            for (const auto& kv : *v.map)
+                if (!(kv.first.size() >= 2 && kv.first[0] == '_' && kv.first[1] == '_')) n++;
+            emp = (n == 0);
+        }
+        else emp = false;
+        if (this->typeName == "empty") return Value::Bool(emp);
+        return Value::Bool(!emp);
+    }
+
     std::string actual = ::typeName(v);
     if (actual == this->typeName) return Value::Bool(true);
 
@@ -2198,10 +2247,10 @@ Value Interpreter::call(const Value& callee, std::vector<Value>& args, int line)
         result = r.value;
     } catch (const BreakSignal&) {
         callStack.pop_back();
-        throw RuntimeError(line, "'bail' outside loop");
+        throw RuntimeError(line, "'stop'/'bail' only works inside a loop or repeat");
     } catch (const ContinueSignal&) {
         callStack.pop_back();
-        throw RuntimeError(line, "'skip' outside loop");
+        throw RuntimeError(line, "'next'/'skip' only works inside a loop or repeat");
     }
 
     callStack.pop_back();
@@ -2213,11 +2262,11 @@ void Interpreter::run(const std::vector<StmtPtr>& program) {
     try {
         for (const auto& s : program) s->exec(global, *this);
     } catch (const ReturnSignal&) {
-        throw RuntimeError(0, "'->' outside function");
+        throw RuntimeError(0, "'->' (return) only works inside a function");
     } catch (const BreakSignal&) {
-        throw RuntimeError(0, "'bail' outside loop");
+        throw RuntimeError(0, "'stop'/'bail' only works inside a loop or repeat");
     } catch (const ContinueSignal&) {
-        throw RuntimeError(0, "'skip' outside loop");
+        throw RuntimeError(0, "'next'/'skip' only works inside a loop or repeat");
     }
 }
 
@@ -3119,6 +3168,22 @@ def("starts_with", [](std::vector<Value>& args) -> Value {
         if (!std::getline(std::cin, line)) return Value::Nil();
         return Value::Str(line);
     });
+    // ask — same as readline (clearer word for prompts)
+    def("ask", [](std::vector<Value>& args) -> Value {
+        if (!args.empty()) std::cout << args[0].toString(false) << std::flush;
+        std::string line;
+        if (!std::getline(std::cin, line)) return Value::Nil();
+        return Value::Str(line);
+    });
+    // say — same as print (short, friendly)
+    def("say", [this](std::vector<Value>& args) -> Value {
+        for (size_t i = 0; i < args.size(); i++) {
+            if (i) std::cout << ' ';
+            std::cout << args[i].toString(false);
+        }
+        std::cout << '\n';
+        return Value::Nil();
+    });
 
     def("gcd", [](std::vector<Value>& args) -> Value {
         if (args.size() != 2 || args[0].kind != Value::Kind::Num || args[1].kind != Value::Kind::Num)
@@ -3422,12 +3487,12 @@ private:
         if (check(Tok::ReturnArrow)) { advance(); return returnStmt(); }
         if (check(Tok::Bail)) {
             int l = advance().line;
-            expect(Tok::Semi, "expected ';' after 'bail'");
+            expect(Tok::Semi, "expected ';' after stop/bail");
             return std::make_shared<BreakStmt>(l);
         }
         if (check(Tok::Skip)) {
             int l = advance().line;
-            expect(Tok::Semi, "expected ';' after 'skip'");
+            expect(Tok::Semi, "expected ';' after next/skip");
             return std::make_shared<ContinueStmt>(l);
         }
         if (check(Tok::Assert)) {
@@ -3833,6 +3898,10 @@ private:
 
         if (check(Tok::Define) || check(Tok::Bind)) {
             Token op = advance();
+            if (check(Tok::Semi) || check(Tok::Eof) || check(Tok::RBrace))
+                throw ParseError(op.line,
+                    std::string("expected a value after '") + op.lexeme +
+                    "' — example: x " + op.lexeme + " 10;");
             ExprPtr val = expression();
             expect(Tok::Semi, "expected ';' after binding");
             return std::make_shared<BindStmt>(target, std::move(type), op.lexeme, val, name.line);
@@ -3844,6 +3913,9 @@ private:
 
     StmtPtr whenStmt() {
         int l = prevLine();
+        if (check(Tok::LBrace))
+            throw ParseError(peek().line,
+                "when needs a condition before '{' — example: when msg == \"hi\" { print(msg); }");
         ExprPtr cond = expression();
         auto thenB = block();
         StmtPtr elseB = nullptr;
@@ -3884,6 +3956,18 @@ private:
             auto body = block();
             return std::make_shared<ForEachStmt>(std::move(names), iterable, body, l);
         }
+        // repeat 5 times { ... }  — no variable needed
+        if (check(Tok::Number)) {
+            Token numTok = advance();
+            if (!(check(Tok::Ident) && peek().lexeme == "times"))
+                throw ParseError(peek().line, "expected 'times' after number — example: repeat 5 times { ... }");
+            advance(); // times
+            auto body = block();
+            auto start = std::make_shared<LiteralExpr>(Value::Num(0), l);
+            auto end = std::make_shared<LiteralExpr>(Value::Num(numTok.num), l);
+            return std::make_shared<ForRangeStmt>("__times", start, end, false, body, l, nullptr);
+        }
+
         Token var = expect(Tok::Ident, "expected loop variable");
 
         if (match(Tok::From)) {
@@ -4044,6 +4128,12 @@ private:
             ExprPtr r = isLevel();
             e = std::make_shared<BinaryExpr>(op.lexeme, e, r, op.line);
         }
+        // membership: 3 in nums, "a" in "cat"
+        if (match(Tok::In)) {
+            int ln = prevLine();
+            ExprPtr r = isLevel();
+            e = std::make_shared<BinaryExpr>("in", e, r, ln);
+        }
         return e;
     }
 
@@ -4054,15 +4144,26 @@ private:
             int ln = peek().line;
             if (check(Tok::Ident)) {
                 tn = advance().lexeme;
-                // Allow qualified: Shape.Circle
-                if (match(Tok::Dot)) {
+                if (tn == "empty") {
+                    tn = "empty";
+                } else if (match(Tok::Dot)) {
+                    // Allow qualified: Shape.Circle
                     tn += ".";
                     tn += expect(Tok::Ident, "expected name after '.' in type").lexeme;
                 }
             }
+            // "is not empty" — 'not' lexes as Bang ("!")
+            else if (check(Tok::Bang)) {
+                advance();
+                if (!(check(Tok::Ident) && peek().lexeme == "empty"))
+                    throw ParseError(peek().line, "expected 'empty' after 'is not'");
+                advance();
+                tn = "not_empty";
+            }
             else if (check(Tok::Nil)) { advance(); tn = "nil"; }
             else {
-                throw ParseError(peek().line, "expected type name after 'is'");
+                throw ParseError(peek().line,
+                    "expected type or 'empty' after 'is' — example: x is num, x is empty, x is not empty");
             }
             e = std::make_shared<IsExpr>(e, tn, ln);
         }
@@ -4272,7 +4373,12 @@ private:
         if (check(Tok::LBracket)) return arrayLiteral();
         if (check(Tok::MapOpen)) return mapLiteral();
         if (check(Tok::SetOpen)) return setLiteral();
-        throw ParseError(peek().line, "expected expression");
+        {
+            std::string got = "end of input";
+            if (!check(Tok::Eof)) got = "'" + peek().lexeme + "'";
+            throw ParseError(peek().line,
+                "expected a value here (number, string, name, call, [...], %{...}) but got " + got);
+        }
     }
 
     ExprPtr setLiteral() {

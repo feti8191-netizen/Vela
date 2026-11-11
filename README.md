@@ -1,3 +1,42 @@
+
+## Language rules (how Vela fits together)
+
+Vela is meant to feel **one language**, not a pile of features. These rules are the core:
+
+1. **Names have one birth**
+   - `:=` creates a name once (fixed).
+   - `<-` creates or updates a changeable name.
+   - Using `:=` again on the same name in the same scope is an error.
+
+2. **Blocks need a reason**
+   - `when` always needs a condition before `{`.
+   - `loop` / `repeat` own `stop`/`bail` and `next`/`skip`. Outside a loop those words are errors.
+
+3. **Words and symbols mean the same thing**
+   - `and` / `or` / `not` = `&&` / `||` / `!`
+   - `stop` / `next` = `bail` / `skip`
+   - `ask` / `say` = `readline` / `print`
+   - Pick the style you like; both are real Vela, not two dialects.
+
+4. **`is` answers “what kind / what state?”**
+   - Types: `x is num`, `x is str`, `x is Shape`
+   - State: `x is empty`, `x is not empty`, `x is nil`
+   - Same keyword, same place in the grammar.
+
+5. **`in` means membership in expressions**
+   - `3 in nums`, `"a" in "cat"`
+   - In `repeat x in list`, `in` marks the collection to walk — same idea: “elements of”.
+
+6. **Math needs numbers**
+   - `try_num` may yield `nil`. Check before `+ - * /`, or errors will say so clearly.
+
+7. **Top to bottom**
+   - Lines after a `when` still run unless they sit inside that `when`/`else` chain.
+   - Put “only if OK” code inside the matching branch.
+
+These rules decide where features belong — not “because another language has it.”
+
+
 # Vela
 
 **Vela** is a small general-purpose programming language with its own syntax, implemented from scratch in portable **C++17**.
@@ -122,13 +161,21 @@ else { print("zero"); }
 repeat i from 0 through 3 { print(i); }
 repeat i from 0 to 10 by 2 { print(i); }
 repeat item in [10, 20] { print(item); }
+repeat 3 times { print("tick"); }
+
+loop {
+  when done { stop; }   // same as bail
+  when skip_me { next; } // same as skip
+}
 ```
 
-`->` returns from a function. `bail` breaks a loop; `skip` continues.
+`->` returns from a function.  
+`stop` / `bail` leave a loop; `next` / `skip` continue to the next turn.  
+Word forms `and` / `or` / `not` match `&&` / `||` / `!`.
 
 ### Data
 
-Arrays, maps (`%{key: value}`), sets (`#{1, 2}`), ranges, records, enums, tuples, destructuring, slices, pipe (`|>`), match, modules (`import`).
+Arrays, maps (`%{key: value}`), sets (`#{1, 2}`), ranges, records, enums, tuples, destructuring, slices, pipe (`|>`), match, modules (`import`), membership (`x in list`), emptiness (`x is empty`).
 
 ### OS and resources
 
@@ -177,6 +224,24 @@ vela/
 ---
 
 
+### Readable syntax
+
+| Write | Meaning |
+|-------|---------|
+| `and` / `or` | same as `&&` / `\|\|` |
+| `stop` | same as `bail` (leave loop) |
+| `next` | same as `skip` (next iteration) |
+| `x is empty` | string/list/map/nil has no content |
+| `x is not empty` | opposite |
+| `not x` | same as `!x` |
+| `x in list` | membership test |
+| `repeat 5 times { }` | loop N times |
+
+### Friendly I/O aliases
+
+- `ask(prompt)` — same as `readline(prompt)`
+- `say(...)` — same as `print(...)`
+
 ### Newer language features
 
 - **Enums with data:** `enum Shape { Circle(r), Rect(w, h) }` and `match s { Shape.Circle(r) => ... }`
@@ -213,6 +278,13 @@ import { upper, pad } from "std/str.vel";
 ### REPL
 
 `.help` `.vars` `.type <expr>` `.load <file>` `.clear`
+
+## Examples
+
+`examples/` covers the language surface (01–45+).  
+Full matrix: `./vela examples/45_full_language_audit.vel` (prints `FULL_AUDIT_OK`).
+
+Also see readable-syntax samples: `43_readable_syntax.vel`, `44_in_not_times.vel`.
 
 ## License
 

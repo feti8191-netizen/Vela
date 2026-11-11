@@ -131,6 +131,9 @@ If a function’s first parameter is named **`self`**, then `obj.method(args)` p
 
 Arithmetic: `+` `-` `*` `/` `%` `**`  
 Comparison and logic: `==` `!=` `<` `>` `<=` `>=` `&&` `||` `!`  
+Readable words (same meaning): `and` `or` `not`  
+Membership: `x in list`, `"a" in "cat"`  
+Emptiness: `x is empty`, `x is not empty`  
 Bitwise: `&` `|` `^` `~` `<<` `>>`  
 Nullish and optional: `??` `?.`  
 Ternary: `cond ? a : b`
@@ -146,6 +149,18 @@ print(user.address?.city);   // nil
 ```
 
 ---
+
+## Readable names (aliases)
+
+| Alias | Same as |
+|-------|---------|
+| `say(...)` | `print(...)` |
+| `ask(prompt)` | `readline(prompt)` |
+| `stop` | `bail` |
+| `next` | `skip` |
+| `and` / `or` / `not` | `&&` / `||` / `!` |
+
+Same rules either way — pick the spelling that reads best for you.
 
 ## Control flow
 
@@ -167,18 +182,21 @@ until done { step(); }
 
 i <- 0;
 loop {
-    when i >= 3 { bail; }
+    when i >= 3 { stop; }   // stop and bail are the same
     i <- i + 1;
 }
 ```
 
+`stop` / `bail` leave the loop. `next` / `skip` jump to the next turn.
+
 ### repeat
 
 ```vela
-repeat i from 0 to 5 { print(i); }
-repeat i from 0 through 10 by 2 { print(i); }
+repeat i from 0 to 5 { print(i); }           // end excluded
+repeat i from 0 through 10 by 2 { print(i); } // end included
 repeat item in [10, 20, 30] { print(item); }
 repeat [k, v] in [[1, "a"], [2, "b"]] { print(k, v); }
+repeat 3 times { print("tick"); }
 ```
 
 ---

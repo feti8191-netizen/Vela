@@ -31,10 +31,27 @@ Nil, number, string, bool, array, map, set, range, function, native, record inst
 
 ## 5. Control
 
-- `when` / `else when` / `else`
-- `unless`, `until`, `loop`, `bail`, `skip`
+- `when` / `else when` / `else` — condition required before `{`
+- `unless`, `until`, `loop`
+- Loop exit: `bail` or `stop`; continue: `skip` or `next` (error outside a loop)
 - `repeat i from A to B [by S]`, `through` for inclusive end
 - `repeat x in collection`
+- `repeat N times { ... }` — N iterations, no bind variable
+
+## 5b. Readable aliases (identical semantics)
+
+| Word form | Symbol form |
+|-----------|-------------|
+| `and` / `or` / `not` | `&&` / `\|\|` / `!` |
+| `stop` / `next` | `bail` / `skip` |
+| `ask` / `say` | `readline` / `print` |
+
+## 5c. `is` and `in`
+
+- `e is Type` — type or enum/record tag checks
+- `e is empty` / `e is not empty` — nil, empty string, empty array, empty map/set
+- `e is nil` — nil check
+- `x in collection` — membership (array, string substring, map key, set)
 
 ## 6. Errors
 
@@ -49,4 +66,8 @@ Nil, number, string, bool, array, map, set, range, function, native, record inst
 
 ## 8. Quality process
 
-See `tests/run_all.sh` and `ROADMAP.md`. Correctness claims require the full process, not only `examples/`.
+- Smoke: all files under `examples/` (includes `45_full_language_audit.vel`)
+- Optional: `tests/run_all.sh` when present
+- See `ROADMAP.md` for known gaps
+
+Correctness claims should cover bindings, control, data, functions, errors, and modules — not only loops or a single demo.

@@ -1,0 +1,4 @@
+// ask / say — friendly aliases for readline / print
+name := "Vela";
+say("Hello,", name);
+say("ask is an alias for readline (type at a prompt in interactive programs)");

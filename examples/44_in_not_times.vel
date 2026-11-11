@@ -1,0 +1,10 @@
+// in, not, repeat N times
+when 2 in [1, 2, 3] {
+  say("found");
+}
+when not (9 in [1, 2]) {
+  say("absent");
+}
+repeat 2 times {
+  say("tick");
+}

@@ -7,6 +7,16 @@
 - Collection helpers already present: flatten, unique, group_by, partition, chunks, windows
 - Examples 27–30
 
+## Completed in readability / consistency pass
+
+- Word aliases: `and`/`or`/`not`, `stop`/`next`, `ask`/`say`
+- `x is empty` / `x is not empty`
+- Membership expression: `x in collection`
+- `repeat N times { ... }`
+- Clearer errors for bindings, `when`, nil math, control outside loops
+- Language rules written in README
+- Full surface audit example: `examples/45_full_language_audit.vel`
+
 # Vela roadmap — honest status
 
 Vela is a **real interpreter** with a growing standard library. It is **not** a systems language, not a package ecosystem like Python/npm, and not a GPU/compute runtime. Below is what exists vs what is still open.
@@ -45,10 +55,11 @@ Feature / property / stress tests live under `tests/`. Examples are smoke tests 
 ## Near-term priority (useful, not theater)
 
 1. Fix ASan leaks  
-2. Widen feature tests to every construct  
+2. Keep `examples/45_full_language_audit.vel` green as features grow  
 3. Grow OS stdlib (paths, permissions, sockets if needed)  
 4. Module layout for stdlib (`import "std/fs"`)  
-5. True codegen when the interpreter surface is stable  
+5. Expand AST→C++ codegen subset without silent embed fallback  
+6. True native codegen when the interpreter surface is stable  
 
 ## Design boundary
 

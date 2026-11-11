@@ -1,0 +1,152 @@
+// ===== BINDINGS =====
+a := 10;
+b <- 1;
+b <- b + 1;
+assert b == 2;
+
+// ===== ARITH / COMPARE =====
+assert 1 + 2 * 3 == 7;
+assert 10 / 2 == 5;
+assert 2 ** 3 == 8;
+assert 5 > 3 and 3 < 5;
+assert not false;
+assert true or false;
+
+// ===== STRINGS =====
+s := "hi";
+assert s + "!" == "hi!";
+assert "ell" in "hello";
+assert "" is empty;
+assert "x" is not empty;
+
+// ===== ARRAYS / IN =====
+nums := [1, 2, 3];
+assert 2 in nums;
+assert not (9 in nums);
+assert len(nums) == 3;
+assert nums is not empty;
+
+// ===== MAPS / SETS =====
+m := %{name: "Ada"};
+assert m["name"] == "Ada";
+st := #{1, 2};
+assert 1 in st;
+
+// ===== WHEN / ELSE =====
+x <- 0;
+when x > 0 { x <- 1; }
+else when x == 0 { x <- 2; }
+else { x <- 3; }
+assert x == 2;
+
+// ===== UNLESS =====
+flag <- false;
+unless flag {
+  flag <- true;
+}
+assert flag == true;
+
+// ===== REPEAT FORMS =====
+total <- 0;
+repeat i from 1 through 3 {
+  total <- total + i;
+}
+assert total == 6;
+
+total2 <- 0;
+repeat i from 0 to 3 {
+  total2 <- total2 + i;
+}
+assert total2 == 3;
+
+total3 <- 0;
+repeat i from 0 to 10 by 5 {
+  total3 <- total3 + i;
+}
+assert total3 == 5;  // to excludes end: 0,5
+
+c <- 0;
+repeat 3 times {
+  c <- c + 1;
+}
+assert c == 3;
+
+joined <- "";
+repeat item in ["a", "b"] {
+  joined <- joined + item;
+}
+assert joined == "ab";
+
+// ===== LOOP STOP NEXT =====
+seen <- 0;
+loop {
+  seen <- seen + 1;
+  when seen == 2 { next; }
+  when seen >= 3 { stop; }
+}
+assert seen == 3;
+
+// ===== FUNCTIONS =====
+double(n) ==> n * 2;
+assert double(4) == 8;
+add(x, y := 1) ==> x + y;
+assert add(5) == 6;
+assert add(5, 3) == 8;
+
+// ===== PIPE =====
+assert (3 |> double) == 6;
+
+// ===== TRY / CATCH =====
+ok <- false;
+try {
+  num("nope");
+} catch {
+  ok <- true;
+}
+assert ok == true;
+
+// ===== TRY_NUM / NIL =====
+assert try_num("x") == nil;
+assert try_num("4") == 4;
+assert try_num("x") is empty;
+
+// ===== MATCH =====
+mval := match 2 {
+  1 => "one",
+  2 => "two",
+  _ => "other"
+};
+assert mval == "two";
+
+// ===== ENUM =====
+enum Color { Red, Green }
+assert Color.Red is Color;
+
+// ===== RECORD =====
+record Point { x: num, y: num }
+p := new Point{x: 3, y: 4};
+assert p.x == 3;
+assert p is Point;
+
+// ===== DESTRUCTURING =====
+pair := [10, 20];
+[u, v] := pair;
+assert u == 10 and v == 20;
+
+// ===== TERNARY / ?? =====
+assert (true ? 1 : 2) == 1;
+assert (nil ?? 9) == 9;
+
+// ===== TYPE / SAY =====
+assert type(1) == "num";
+assert type("a") == "str";
+
+// ===== SLICE =====
+assert [1,2,3,4][1:3][0] == 2;
+
+// ===== IS TYPES =====
+assert 1 is num;
+assert "z" is str;
+assert true is bool;
+
+say("FULL_AUDIT_OK");
