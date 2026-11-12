@@ -177,14 +177,18 @@ sign(n) ==> {
 ### unless / until / loop
 
 ```vela
-unless ready { setup(); }
-until done { step(); }
+ready <- false;
+unless ready {
+    ready <- true;
+    print("set up");
+}
 
 i <- 0;
 loop {
     when i >= 3 { stop; }   // stop and bail are the same
     i <- i + 1;
 }
+print(i);
 ```
 
 `stop` / `bail` leave the loop. `next` / `skip` jump to the next turn.

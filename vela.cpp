@@ -3454,13 +3454,13 @@ private:
 
     std::shared_ptr<BlockStmt> block() {
         int l = peek().line;
-        expect(Tok::LBrace, "expected '{'");
+        expect(Tok::LBrace, "expected '{' to start a block — example: when cond { ... }");
         std::vector<StmtPtr> stmts;
         while (!check(Tok::RBrace) && !check(Tok::Eof)) {
             if (check(Tok::Semi)) { advance(); continue; }
             stmts.push_back(statement());
         }
-        expect(Tok::RBrace, "expected '}'");
+        expect(Tok::RBrace, "expected '}' to close the block — every { needs a matching }");
         return std::make_shared<BlockStmt>(std::move(stmts), l);
     }
 
@@ -3828,7 +3828,7 @@ private:
                     bindings.push_back({key, var});
                 } while (match(Tok::Comma) && !check(Tok::RBrace));
             }
-            expect(Tok::RBrace, "expected '}'");
+            expect(Tok::RBrace, "expected '}' to close the block — every { needs a matching }");
             if (!check(Tok::Define) && !check(Tok::Bind)) { pos = save; return nullptr; }
             Token op = advance();
             ExprPtr val = expression();
@@ -4390,7 +4390,7 @@ private:
                 elems.push_back({expression(), false});
             } while (match(Tok::Comma) && !check(Tok::RBrace));
         }
-        expect(Tok::RBrace, "expected '}'");
+        expect(Tok::RBrace, "expected '}' to close the block — every { needs a matching }");
         // Build as: set(...elems) via a synthetic call would need runtime —
         // instead return an array and convert in a thin wrapper: use MapExpr-like
         // Construct a map literal with __set at eval time via ArrayExpr + native is heavy.
@@ -4505,7 +4505,7 @@ private:
                 pairs.push_back({key, val});
             } while (match(Tok::Comma) && !check(Tok::RBrace));
         }
-        expect(Tok::RBrace, "expected '}'");
+        expect(Tok::RBrace, "expected '}' to close the block — every { needs a matching }");
         return std::make_shared<MapExpr>(std::move(pairs), l);
     }
 
@@ -4689,16 +4689,19 @@ static void reportError(const std::string& kind, int line, const std::string& ms
     if (line > 0) std::cerr << " [line " << line << "]";
     std::cerr << ": " << msg << '\n';
     if (line > 0 && line <= static_cast<int>(g_sourceLines.size())) {
-        std::cerr << "  " << g_sourceLines[static_cast<size_t>(line - 1)] << '\n';
-        std::cerr << "  ^\n";
+        const std::string& srcLine = g_sourceLines[static_cast<size_t>(line - 1)];
+        std::cerr << "  " << srcLine << '\n';
+        size_t col = 0;
+        while (col < srcLine.size() && (srcLine[col] == ' ' || srcLine[col] == '\t')) col++;
+        std::cerr << "  " << std::string(col, ' ') << "^\n";
+        std::cerr << "  (check this line: matching { } and ; if needed)\n";
+    }
     if (g_activeInterp && !g_activeInterp->callStack.empty()) {
         std::cerr << "call stack (most recent last):\n";
         for (const auto& frame : g_activeInterp->callStack)
             std::cerr << "  in " << frame << '\n';
     }
-    }
 }
-
 static void setSource(const std::string& src) {
     g_sourceLines.clear();
     std::string cur;

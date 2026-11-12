@@ -163,9 +163,12 @@ repeat i from 0 to 10 by 2 { print(i); }
 repeat item in [10, 20] { print(item); }
 repeat 3 times { print("tick"); }
 
+n <- 0;
 loop {
-  when done { stop; }   // same as bail
-  when skip_me { next; } // same as skip
+  n <- n + 1;
+  when n == 2 { next; }   // skip rest of this turn
+  when n >= 3 { stop; }   // leave the loop
+  print(n);
 }
 ```
 
