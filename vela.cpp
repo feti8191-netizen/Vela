@@ -953,6 +953,18 @@ std::string Value::toString(bool nested) const {
                 r += "}";
                 return r;
             }
+            if (map->count("__set")) {
+                std::string r = "#{";
+                bool first = true;
+                for (const auto& kv : *map) {
+                    if (kv.first == "__set") continue;
+                    if (!first) r += ", ";
+                    first = false;
+                    r += kv.second.toString(true);
+                }
+                r += "}";
+                return r;
+            }
             std::string r = "%{";
             bool first = true;
             for (const auto& kv : *map) {

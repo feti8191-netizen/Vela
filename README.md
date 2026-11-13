@@ -146,6 +146,36 @@ print(3 |> square);
 
 ---
 
+## Standard modules (`std/`)
+
+```vela
+import "std/str.vel" as S;
+import "std/list.vel" as L;
+import "std/math.vel" as M;
+import "std/util.vel" as U;
+
+print(S.upper("vela"));
+print(L.take([1, 2, 3, 4], 2));
+print(M.clamp(15, 0, 10));
+print(U.default(nil, 42));
+```
+
+| Module | Role |
+|--------|------|
+| `std/str.vel` | upper, lower, pad, strip, starts/ends, replace_all, … |
+| `std/list.vel` | head, tail, last, take, drop, uniq, flat, … |
+| `std/math.vel` | clamp, sign, lerp, in_range, even/odd, … |
+| `std/util.vel` | default, coalesce, repeat_val, identity |
+| `std/map.vel` | get, put, keys/values helpers |
+| `std/set.vel` | add, remove, union/intersect/difference |
+| `std/json.vel` | parse, stringify |
+| `std/io.vel` | read, write, append, exists, list, remove |
+| `std/range.vel` | ints, ints_by |
+| `std/text.vel` | lines, words, count_char |
+| `std/time.vel` | now_sec, sleep_sec, sleep_ms |
+| `std/check.vel` | assert_true, assert_eq, assert_nil |
+| `std/path.vel` | join2, basename, dirname, extension |
+
 ## Examples
 
 The `examples/` folder exercises the language surface.  
