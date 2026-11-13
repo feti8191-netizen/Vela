@@ -1,0 +1,27 @@
+// std/queue — queue as array (front = index 0)
+empty() ==> [];
+enqueue(q, x) ==> {
+    push(q, x);
+    -> q;
+};
+// returns [value, new_queue] (nil value if empty)
+take_front(q) ==> {
+    when len(q) == 0 { -> [nil, q]; }
+    else {
+        x := q[0];
+        rest <- [];
+        i <- 1;
+        loop {
+            when i >= len(q) { stop; }
+            push(rest, q[i]);
+            i <- i + 1;
+        }
+        -> [x, rest];
+    }
+};
+front(q) ==> {
+    when len(q) == 0 { -> nil; }
+    else { -> q[0]; }
+};
+size(q) ==> len(q);
+is_empty(q) ==> len(q) == 0;

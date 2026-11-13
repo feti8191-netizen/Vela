@@ -1,0 +1,21 @@
+// std/table — list-of-maps helpers (simple rows)
+// column values: table_col(rows, "name") -> [row.name, ...]
+col(rows, key) ==> {
+    out <- [];
+    repeat row in rows {
+        when has(row, key) { push(out, row[key]); }
+        else { push(out, nil); }
+    }
+    -> out;
+};
+// filter rows where row[key] == value
+where_eq(rows, key, value) ==> {
+    out <- [];
+    repeat row in rows {
+        when has(row, key) {
+            when row[key] == value { push(out, row); }
+        }
+    }
+    -> out;
+};
+nrows(rows) ==> len(rows);

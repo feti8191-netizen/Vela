@@ -1,0 +1,18 @@
+// std/logic — boolean helpers
+all_true(xs) ==> {
+    repeat x in xs {
+        when not x { -> false; }
+    }
+    -> true;
+};
+any_true(xs) ==> {
+    repeat x in xs {
+        when x { -> true; }
+    }
+    -> false;
+};
+// if_then: when cond is true return a else b
+if_then(cond, a, b) ==> {
+    when cond { -> a; }
+    else { -> b; }
+};

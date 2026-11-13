@@ -1,0 +1,19 @@
+import "std/rand.vel" as R;
+import "std/check.vel" as C;
+import "std/list.vel" as L;
+import "std/math.vel" as M;
+import "std/str.vel" as S;
+
+u := R.unit();
+C.assert_true(u >= 0 and u < 1);
+
+n := R.int_between(1, 6);
+C.assert_true(n >= 1 and n <= 6);
+
+item := R.pick(["a", "b", "c"]);
+C.assert_true(item == "a" or item == "b" or item == "c");
+
+C.assert_eq(L.head([1, 2]), 1);
+C.assert_eq(M.clamp(20, 0, 10), 10);
+C.assert_eq(S.lower("HI"), "hi");
+print("smoke_ok");

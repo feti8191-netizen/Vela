@@ -1,0 +1,16 @@
+import "std/logic.vel" as Logic;
+import "std/encode.vel" as Enc;
+import "std/check.vel" as C;
+
+C.assert_true(Logic.all_true([true, true, 1]));
+C.assert_true(not Logic.all_true([true, false]));
+C.assert_true(Logic.any_true([false, 0, true]));
+C.assert_eq(Logic.if_then(true, "yes", "no"), "yes");
+C.assert_eq(Logic.if_then(false, "yes", "no"), "no");
+
+j := Enc.to_json(%{a: 1});
+C.assert_true(contains(j, "a"));
+back := Enc.from_json(j);
+C.assert_eq(back.a, 1);
+
+print("logic_encode_ok");

@@ -1,0 +1,18 @@
+import "std/iter.vel" as Iter;
+import "std/check.vel" as C;
+
+xs := [1, 2, 3, 4];
+add(a, b) ==> a + b;
+C.assert_eq(Iter.fold(xs, 0, add), 10);
+
+only_even_double(n) ==> {
+    when n % 2 == 0 { -> n * 2; }
+    else { -> nil; }
+};
+C.assert_eq(Iter.filter_map(xs, only_even_double), [4, 8]);
+
+en := Iter.enumerate_list(["a", "b"]);
+C.assert_eq(en[0][0], 0);
+C.assert_eq(en[0][1], "a");
+C.assert_eq(en[1][1], "b");
+print("iter_ok");

@@ -1,4 +1,4 @@
-// import "std/list.vel" as L
+// std/list — list helpers
 head(xs) ==> {
     when len(xs) == 0 { -> nil; }
     else { -> xs[0]; }
@@ -7,7 +7,26 @@ tail(xs) ==> {
     when len(xs) == 0 { -> []; }
     else { -> xs[1:len(xs)]; }
 };
+last(xs) ==> {
+    when len(xs) == 0 { -> nil; }
+    else { -> xs[len(xs) - 1]; }
+};
 sum_list(xs) ==> sum(xs);
 map_list(xs, f) ==> map(xs, f);
+filter_list(xs, f) ==> filter(xs, f);
 uniq(xs) ==> unique(xs);
 flat(xs) ==> flatten(xs);
+len_list(xs) ==> len(xs);
+is_empty(xs) ==> len(xs) == 0;
+take(xs, n) ==> {
+    when n <= 0 { -> []; }
+    else when n >= len(xs) { -> xs; }
+    else { -> xs[0:n]; }
+};
+drop(xs, n) ==> {
+    when n <= 0 { -> xs; }
+    else when n >= len(xs) { -> []; }
+    else { -> xs[n:len(xs)]; }
+};
+rev(xs) ==> reverse(xs);
+sorted_list(xs) ==> sorted(xs);

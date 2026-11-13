@@ -1,0 +1,7 @@
+// std/io — file helpers (thin wrappers around builtins)
+read(path) ==> read_file(path);
+write(path, content) ==> write_file(path, content);
+append(path, content) ==> append_file(path, content);
+exists(path) ==> file_exists(path);
+remove(path) ==> remove_file(path);
+list(path := ".") ==> list_dir(path);

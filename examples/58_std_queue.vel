@@ -1,0 +1,14 @@
+import "std/queue.vel" as Q;
+import "std/check.vel" as C;
+
+q := Q.empty();
+Q.enqueue(q, "a");
+Q.enqueue(q, "b");
+Q.enqueue(q, "c");
+C.assert_eq(Q.front(q), "a");
+pair := Q.take_front(q);
+C.assert_eq(pair[0], "a");
+q2 := pair[1];
+C.assert_eq(Q.front(q2), "b");
+C.assert_eq(Q.size(q2), 2);
+print("queue_ok");

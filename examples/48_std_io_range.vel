@@ -1,0 +1,16 @@
+import "std/range.vel" as R;
+import "std/io.vel" as IO;
+import "std/list.vel" as L;
+
+print(R.ints(1, 4));
+print(R.ints_by(0, 10, 3));
+print(R.ints_by(5, 1, -2));
+
+path := "/tmp/vela_std_io_test.txt";
+IO.write(path, "hello\n");
+IO.append(path, "world\n");
+print(IO.exists(path));
+print(IO.read(path));
+IO.remove(path);
+print(IO.exists(path));
+print(L.sum_list(R.ints(1, 5)));

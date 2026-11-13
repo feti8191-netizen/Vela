@@ -1,0 +1,20 @@
+// std/memo — tiny key/value memo map helpers
+empty() ==> %{};
+has_key(m, k) ==> has(m, k);
+get(m, k, fallback := nil) ==> {
+    when has(m, k) { -> m[k]; }
+    else { -> fallback; }
+};
+set(m, k, v) ==> {
+    m[k] <- v;
+    -> m;
+};
+// get or compute: if missing, call f(), store, return
+get_or(m, k, f) ==> {
+    when has(m, k) { -> m[k]; }
+    else {
+        v := f();
+        m[k] <- v;
+        -> v;
+    }
+};

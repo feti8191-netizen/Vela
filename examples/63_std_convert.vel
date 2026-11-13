@@ -1,0 +1,12 @@
+import "std/convert.vel" as Conv;
+import "std/check.vel" as C;
+
+C.assert_eq(Conv.to_num("3.5"), 3.5);
+C.assert_nil(Conv.to_num("nope"));
+C.assert_eq(Conv.to_str(12), "12");
+C.assert_true(Conv.to_bool(1));
+C.assert_true(not Conv.to_bool(0));
+C.assert_true(not Conv.to_bool(""));
+C.assert_eq(Conv.to_int("7.9"), 7);
+C.assert_eq(Conv.to_int("-2.1"), -2);
+print("convert_ok");

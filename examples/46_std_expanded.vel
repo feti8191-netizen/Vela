@@ -1,0 +1,19 @@
+import "std/str.vel" as S;
+import "std/list.vel" as L;
+import "std/math.vel" as M;
+import "std/util.vel" as U;
+
+print(S.upper("vela"));
+print(S.strip("  hi  "));
+print(S.starts("hello", "he"));
+
+print(L.last([1, 2, 9]));
+print(L.take([1, 2, 3, 4], 2));
+print(L.drop([1, 2, 3, 4], 2));
+
+print(M.clamp(15, 0, 10));
+print(M.sign(-3));
+print(M.even(4));
+
+print(U.default(nil, 42));
+print(U.repeat_val("x", 3));

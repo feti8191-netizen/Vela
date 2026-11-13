@@ -1,0 +1,6 @@
+// std/sort — sorting helpers (uses builtin sorted when present)
+asc(xs) ==> sorted(xs);
+// simple reverse of sorted for desc
+desc(xs) ==> reverse(sorted(xs));
+// sort copy without mutating intent
+sorted_copy(xs) ==> sorted(xs);

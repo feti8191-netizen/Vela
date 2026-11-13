@@ -1,0 +1,21 @@
+import "std/pair.vel" as Pair;
+import "std/result.vel" as Res;
+import "std/check.vel" as C;
+
+p := Pair.of(1, "a");
+C.assert_eq(Pair.first(p), 1);
+C.assert_eq(Pair.second(p), "a");
+C.assert_eq(Pair.swap(p)[0], "a");
+
+r := Res.ok(10);
+C.assert_true(Res.is_ok(r));
+C.assert_eq(Res.unwrap_or(r, 0), 10);
+
+e := Res.err("nope");
+C.assert_true(Res.is_err(e));
+C.assert_eq(Res.unwrap_or(e, 99), 99);
+
+double(x) ==> x * 2;
+r2 := Res.map_ok(Res.ok(5), double);
+C.assert_eq(r2.value, 10);
+print("pair_result_ok");

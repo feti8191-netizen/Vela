@@ -1,0 +1,5 @@
+// std/pair — two-element helpers using arrays
+of(a, b) ==> [a, b];
+first(p) ==> p[0];
+second(p) ==> p[1];
+swap(p) ==> [p[1], p[0]];

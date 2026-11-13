@@ -1,0 +1,10 @@
+import "std/path.vel" as P;
+import "std/check.vel" as C;
+
+C.assert_eq(P.join2("a", "b"), "a/b");
+C.assert_eq(P.join2("a/", "b"), "a/b");
+C.assert_eq(P.basename("/home/u/file.vel"), "file.vel");
+C.assert_eq(P.dirname("/home/u/file.vel"), "/home/u");
+C.assert_eq(P.extension("file.vel"), "vel");
+C.assert_eq(P.extension("noext"), "");
+print("path_ok");

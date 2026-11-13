@@ -1,0 +1,13 @@
+import "std/stack.vel" as Stack;
+import "std/check.vel" as C;
+
+s := Stack.empty();
+C.assert_true(Stack.is_empty(s));
+Stack.push_s(s, 1);
+Stack.push_s(s, 2);
+Stack.push_s(s, 3);
+C.assert_eq(Stack.peek(s), 3);
+C.assert_eq(Stack.pop_s(s), 3);
+C.assert_eq(Stack.pop_s(s), 2);
+C.assert_eq(Stack.size(s), 1);
+print("stack_ok");

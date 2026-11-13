@@ -1,0 +1,25 @@
+// std/rand — random helpers (builtin random() -> [0, 1))
+unit() ==> random();
+// truncate toward zero for non-negative values
+_trunc0(x) ==> x - (x % 1);
+// integer in [lo, hi] inclusive
+int_between(lo, hi) ==> {
+    when hi < lo {
+        t := lo;
+        lo <- hi;
+        hi <- t;
+    }
+    n := hi - lo + 1;
+    r := random() * n;
+    -> lo + _trunc0(r);
+};
+pick(xs) ==> {
+    when len(xs) == 0 { -> nil; }
+    else {
+        r := random() * len(xs);
+        i := _trunc0(r);
+        when i >= len(xs) { i <- len(xs) - 1; }
+        when i < 0 { i <- 0; }
+        -> xs[i];
+    }
+};

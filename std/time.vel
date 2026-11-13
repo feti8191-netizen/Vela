@@ -1,0 +1,4 @@
+// std/time — time helpers (now is seconds since epoch as number)
+now_sec() ==> now();
+sleep_ms(ms) ==> sleep(ms / 1000);
+sleep_sec(s) ==> sleep(s);

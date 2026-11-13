@@ -1,5 +1,17 @@
-// import "std/str.vel" as S
+// std/str — string helpers (thin wrappers + small combinators)
 upper(s) ==> to_upper(s);
 lower(s) ==> to_lower(s);
 pad(s, w, fill := "0") ==> pad_left(str(s), w, fill);
+pad_end(s, w, fill := " ") ==> pad_right(str(s), w, fill);
 contains_str(s, sub) ==> contains(s, sub);
+starts(s, pre) ==> starts_with(s, pre);
+ends(s, suf) ==> ends_with(s, suf);
+strip(s) ==> trim(s);
+chars_of(s) ==> chars(s);
+// note: 'from' and 'to' are keywords — use src/dst
+replace_all(s, src, dst) ==> replace(s, src, dst);
+is_blank(s) ==> {
+    when s == nil { -> true; }
+    else { -> trim(str(s)) == ""; }
+};
+join_with(parts, sep := ",") ==> join(parts, sep);

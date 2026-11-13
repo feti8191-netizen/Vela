@@ -1,0 +1,23 @@
+// std/math — small numeric helpers on top of builtins
+clamp(x, lo, hi) ==> {
+    when x < lo { -> lo; }
+    else when x > hi { -> hi; }
+    else { -> x; }
+};
+abs_num(x) ==> {
+    when x < 0 { -> -x; }
+    else { -> x; }
+};
+sign(x) ==> {
+    when x > 0 { -> 1; }
+    else when x < 0 { -> -1; }
+    else { -> 0; }
+};
+minmax(a, b) ==> {
+    when a < b { -> [a, b]; }
+    else { -> [b, a]; }
+};
+lerp(a, b, t) ==> a + (b - a) * t;
+in_range(x, lo, hi) ==> x >= lo and x <= hi;
+even(n) ==> n % 2 == 0;
+odd(n) ==> n % 2 != 0;

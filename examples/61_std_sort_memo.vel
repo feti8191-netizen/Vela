@@ -1,0 +1,23 @@
+import "std/sort.vel" as Sort;
+import "std/memo.vel" as Memo;
+import "std/check.vel" as C;
+
+C.assert_eq(Sort.asc([3, 1, 2]), [1, 2, 3]);
+C.assert_eq(Sort.desc([3, 1, 2]), [3, 2, 1]);
+
+m := Memo.empty();
+C.assert_eq(Memo.get(m, "x", 0), 0);
+Memo.set(m, "x", 10);
+C.assert_eq(Memo.get(m, "x"), 10);
+
+calls <- 0;
+make() ==> {
+    calls <- calls + 1;
+    -> 42;
+};
+v1 := Memo.get_or(m, "ans", make);
+v2 := Memo.get_or(m, "ans", make);
+C.assert_eq(v1, 42);
+C.assert_eq(v2, 42);
+C.assert_eq(calls, 1);
+print("sort_memo_ok");

@@ -1,0 +1,21 @@
+// std/stack — stack as array (top = last element)
+// note: 'new' is a keyword — use empty()
+empty() ==> [];
+push_s(st, x) ==> {
+    push(st, x);
+    -> st;
+};
+pop_s(st) ==> {
+    when len(st) == 0 { -> nil; }
+    else {
+        x := st[len(st) - 1];
+        pop(st);
+        -> x;
+    }
+};
+peek(st) ==> {
+    when len(st) == 0 { -> nil; }
+    else { -> st[len(st) - 1]; }
+};
+size(st) ==> len(st);
+is_empty(st) ==> len(st) == 0;

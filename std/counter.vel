@@ -1,0 +1,19 @@
+// std/counter — counting map helpers (key -> number)
+// note: 'by' is a keyword — use amount
+empty() ==> %{};
+inc(c, key, amount := 1) ==> {
+    when has(c, key) { c[key] <- c[key] + amount; }
+    else { c[key] <- amount; }
+    -> c;
+};
+get_count(c, key) ==> {
+    when has(c, key) { -> c[key]; }
+    else { -> 0; }
+};
+total(c) ==> {
+    t <- 0;
+    repeat k in keys(c) {
+        t <- t + c[k];
+    }
+    -> t;
+};

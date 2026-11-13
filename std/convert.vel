@@ -1,0 +1,21 @@
+// std/convert — safe conversions
+to_num(x) ==> try_num(str(x));
+to_str(x) ==> str(x);
+to_bool(x) ==> {
+    when x == nil { -> false; }
+    else when x == false { -> false; }
+    else when x == 0 { -> false; }
+    else when x == "" { -> false; }
+    else { -> true; }
+};
+// parse int-like: try_num then truncate toward zero for non-negative
+to_int(x) ==> {
+    n := try_num(str(x));
+    when n == nil { -> nil; }
+    else when n >= 0 { -> n - (n % 1); }
+    else {
+        // toward zero for negatives
+        a := -n;
+        -> -(a - (a % 1));
+    }
+};

@@ -1,0 +1,8 @@
+// std/set — set helpers (#{...} and set builtins)
+new_set() ==> #{};
+add(s, x) ==> set_add(s, x);
+remove(s, x) ==> set_remove(s, x);
+has_item(s, x) ==> set_has(s, x);
+unite(a, b) ==> set_union(a, b);
+common(a, b) ==> set_intersect(a, b);
+without(a, b) ==> set_difference(a, b);

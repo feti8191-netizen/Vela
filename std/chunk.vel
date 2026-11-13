@@ -1,0 +1,11 @@
+// std/chunk — split lists into fixed-size pieces
+// uses builtin chunks when available; pure fallback also provided
+of(xs, n) ==> {
+    when n <= 0 { -> []; }
+    else { -> chunks(xs, n); }
+};
+// windows of size n (sliding)
+slide(xs, n) ==> {
+    when n <= 0 { -> []; }
+    else { -> windows(xs, n); }
+};

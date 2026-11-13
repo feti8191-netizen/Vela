@@ -1,0 +1,20 @@
+// std/util — small general helpers
+identity(x) ==> x;
+default(x, fallback) ==> {
+    when x == nil { -> fallback; }
+    else { -> x; }
+};
+coalesce(a, b) ==> {
+    when a == nil { -> b; }
+    else { -> a; }
+};
+repeat_val(x, n) ==> {
+    out <- [];
+    i <- 0;
+    loop {
+        when i >= n { stop; }
+        push(out, x);
+        i <- i + 1;
+    }
+    -> out;
+};

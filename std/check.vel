@@ -1,0 +1,19 @@
+// std/check — small test/assert helpers
+assert_true(cond, msg := "assert_true failed") ==> {
+    when not cond {
+        throw msg;
+    }
+    -> true;
+};
+assert_eq(a, b, msg := "assert_eq failed") ==> {
+    when a != b {
+        throw msg + " (got " + str(a) + ", expected " + str(b) + ")";
+    }
+    -> true;
+};
+assert_nil(x, msg := "assert_nil failed") ==> {
+    when x != nil {
+        throw msg;
+    }
+    -> true;
+};

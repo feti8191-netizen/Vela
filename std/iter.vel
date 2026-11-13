@@ -1,0 +1,31 @@
+// std/iter — iteration helpers built on lists
+foreach(xs, f) ==> {
+    repeat x in xs { f(x); }
+    -> nil;
+};
+// map + filter combo: keep and transform
+filter_map(xs, f) ==> {
+    out <- [];
+    repeat x in xs {
+        v := f(x);
+        when v != nil { push(out, v); }
+    }
+    -> out;
+};
+// reduce with initial
+fold(xs, init, f) ==> {
+    acc <- init;
+    repeat x in xs {
+        acc <- f(acc, x);
+    }
+    -> acc;
+};
+enumerate_list(xs) ==> {
+    out <- [];
+    i <- 0;
+    repeat x in xs {
+        push(out, [i, x]);
+        i <- i + 1;
+    }
+    -> out;
+};

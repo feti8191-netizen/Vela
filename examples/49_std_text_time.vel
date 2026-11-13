@@ -1,0 +1,12 @@
+import "std/text.vel" as T;
+import "std/time.vel" as Time;
+import "std/str.vel" as S;
+
+print(T.lines("a\nb\nc"));
+print(T.words("  hello   vela  "));
+print(T.count_char("banana", "a"));
+print(S.upper(T.words("hi there")[0]));
+
+t := Time.now_sec();
+print(type(t));
+print(t > 0);

@@ -1,0 +1,15 @@
+import "std/env.vel" as E;
+import "std/check.vel" as C;
+
+p := E.platform_name();
+C.assert_true(type(p) == "str");
+print("platform", p);
+
+// PATH usually exists on Unix
+path := E.get("PATH", "");
+C.assert_true(type(path) == "str");
+
+d := E.working_dir();
+C.assert_true(len(d) > 0);
+print("cwd_ok");
+print("env_ok");

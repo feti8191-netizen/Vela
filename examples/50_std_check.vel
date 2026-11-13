@@ -1,0 +1,17 @@
+import "std/check.vel" as C;
+import "std/math.vel" as M;
+import "std/list.vel" as L;
+import "std/str.vel" as S;
+
+C.assert_true(M.even(4));
+C.assert_eq(L.head([9, 8]), 9);
+C.assert_eq(S.upper("ab"), "AB");
+C.assert_nil(try_num("nope"));
+
+print("checks_ok");
+
+try {
+    C.assert_eq(1, 2, "one_is_not_two");
+} catch e {
+    print("caught", e);
+}

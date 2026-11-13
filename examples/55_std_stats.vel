@@ -1,0 +1,11 @@
+import "std/stats.vel" as Stats;
+import "std/check.vel" as C;
+
+xs := [2, 4, 6, 8];
+C.assert_eq(Stats.mean(xs), 5);
+C.assert_eq(Stats.min_of(xs), 2);
+C.assert_eq(Stats.max_of(xs), 8);
+C.assert_eq(Stats.count(xs), 4);
+C.assert_eq(Stats.sum_sq([3, 4]), 25);
+C.assert_nil(Stats.mean([]));
+print("stats_ok");

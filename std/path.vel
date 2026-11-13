@@ -1,0 +1,37 @@
+// std/path — simple path string helpers (no OS path API beyond strings)
+join2(a, b) ==> {
+    when a == "" { -> b; }
+    else when ends_with(a, "/") { -> a + b; }
+    else { -> a + "/" + b; }
+};
+basename(p) ==> {
+    s := str(p);
+    // last segment after /
+    parts := split(s, "/");
+    when len(parts) == 0 { -> ""; }
+    else { -> parts[len(parts) - 1]; }
+};
+dirname(p) ==> {
+    s := str(p);
+    when not contains(s, "/") { -> "."; }
+    parts := split(s, "/");
+    when len(parts) <= 1 { -> "."; }
+    out <- parts[0];
+    i <- 1;
+    loop {
+        when i >= len(parts) - 1 { stop; }
+        out <- out + "/" + parts[i];
+        i <- i + 1;
+    }
+    when out == "" { -> "/"; }
+    else { -> out; }
+};
+extension(p) ==> {
+    base := basename(p);
+    when not contains(base, ".") { -> ""; }
+    else {
+        parts := split(base, ".");
+        when len(parts) < 2 { -> ""; }
+        else { -> parts[len(parts) - 1]; }
+    }
+};

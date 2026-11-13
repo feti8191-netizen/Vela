@@ -1,0 +1,33 @@
+// std/range — numeric range helpers
+// inclusive list of integers from a through b
+ints(a, b) ==> {
+    out <- [];
+    i <- a;
+    loop {
+        when i > b { stop; }
+        push(out, i);
+        i <- i + 1;
+    }
+    -> out;
+};
+// step may be negative
+ints_by(a, b, step) ==> {
+    out <- [];
+    when step == 0 { -> out; }
+    i <- a;
+    when step > 0 {
+        loop {
+            when i > b { stop; }
+            push(out, i);
+            i <- i + step;
+        }
+    }
+    else {
+        loop {
+            when i < b { stop; }
+            push(out, i);
+            i <- i + step;
+        }
+    }
+    -> out;
+};

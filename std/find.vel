@@ -1,0 +1,16 @@
+// std/find — search helpers for lists
+index_of(xs, value) ==> {
+    i <- 0;
+    repeat x in xs {
+        when x == value { -> i; }
+        i <- i + 1;
+    }
+    -> -1;
+};
+includes(xs, value) ==> index_of(xs, value) >= 0;
+find_first(xs, pred) ==> {
+    repeat x in xs {
+        when pred(x) { -> x; }
+    }
+    -> nil;
+};

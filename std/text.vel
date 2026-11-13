@@ -1,0 +1,19 @@
+// std/text — extra text helpers on top of builtins
+lines(s) ==> split(s, "\n");
+words(s) ==> {
+    // split on spaces then drop empties
+    parts := split(trim(s), " ");
+    out <- [];
+    repeat w in parts {
+        when w != "" { push(out, w); }
+    }
+    -> out;
+};
+count_char(s, ch) ==> {
+    n <- 0;
+    cs := chars(str(s));
+    repeat c in cs {
+        when c == ch { n <- n + 1; }
+    }
+    -> n;
+};

@@ -1,0 +1,13 @@
+// std/map — map helpers
+get(m, key, fallback := nil) ==> {
+    when has(m, key) { -> m[key]; }
+    else { -> fallback; }
+};
+put(m, key, val) ==> {
+    m[key] <- val;
+    -> m;
+};
+key_list(m) ==> keys(m);
+value_list(m) ==> values(m);
+size_map(m) ==> len(m);
+has_key(m, key) ==> has(m, key);

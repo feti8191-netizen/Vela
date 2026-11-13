@@ -1,0 +1,12 @@
+import "std/counter.vel" as Cnt;
+import "std/check.vel" as C;
+
+c := Cnt.empty();
+Cnt.inc(c, "a");
+Cnt.inc(c, "a");
+Cnt.inc(c, "b", 3);
+C.assert_eq(Cnt.get_count(c, "a"), 2);
+C.assert_eq(Cnt.get_count(c, "b"), 3);
+C.assert_eq(Cnt.get_count(c, "z"), 0);
+C.assert_eq(Cnt.total(c), 5);
+print("counter_ok");

@@ -1,0 +1,14 @@
+import "std/chunk.vel" as Chunk;
+import "std/find.vel" as Find;
+import "std/check.vel" as C;
+
+xs := [1, 2, 3, 4, 5];
+C.assert_eq(Chunk.of(xs, 2), [[1, 2], [3, 4], [5]]);
+C.assert_eq(Find.index_of(xs, 3), 2);
+C.assert_eq(Find.index_of(xs, 9), -1);
+C.assert_true(Find.includes(xs, 4));
+C.assert_true(not Find.includes(xs, 9));
+
+is_even(n) ==> n % 2 == 0;
+C.assert_eq(Find.find_first(xs, is_even), 2);
+print("chunk_find_ok");

@@ -1,0 +1,13 @@
+// std/result — lightweight ok/err as maps
+ok(value) ==> %{ok: true, value: value};
+err(message) ==> %{ok: false, error: message};
+is_ok(r) ==> r.ok == true;
+is_err(r) ==> r.ok == false;
+unwrap_or(r, fallback) ==> {
+    when r.ok { -> r.value; }
+    else { -> fallback; }
+};
+map_ok(r, f) ==> {
+    when r.ok { -> ok(f(r.value)); }
+    else { -> r; }
+};

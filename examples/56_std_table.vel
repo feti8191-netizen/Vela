@@ -1,0 +1,18 @@
+import "std/table.vel" as T;
+import "std/check.vel" as C;
+import "std/stats.vel" as Stats;
+
+rows := [
+    %{name: "Ada", age: 36},
+    %{name: "Grace", age: 40},
+    %{name: "Alan", age: 41}
+];
+
+ages := T.col(rows, "age");
+C.assert_eq(Stats.mean(ages), 39);
+C.assert_eq(T.nrows(rows), 3);
+
+graces := T.where_eq(rows, "name", "Grace");
+C.assert_eq(len(graces), 1);
+C.assert_eq(graces[0].age, 40);
+print("table_ok");

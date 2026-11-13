@@ -1,0 +1,3 @@
+// std/json — JSON parse / stringify wrappers
+parse(s) ==> json_parse(s);
+stringify(v) ==> json_stringify(v);

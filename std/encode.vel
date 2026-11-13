@@ -1,0 +1,5 @@
+// std/encode — encoding helpers
+to_hex(s) ==> hex_encode(str(s));
+// JSON as text encoding convenience
+to_json(v) ==> json_stringify(v);
+from_json(s) ==> json_parse(s);
