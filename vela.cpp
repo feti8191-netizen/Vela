@@ -4731,6 +4731,7 @@ int runSource(const std::string& src, bool replMode, const std::string& baseDir)
         } else {
             I.run(prog);
         }
+        g_activeInterp = nullptr;
         return 0;
     } catch (const ParseError& e) {
         reportError("parse error", e.line, e.what());
@@ -4852,581 +4853,26 @@ std::string dirOf(const std::string& path) {
 
 int runSource(const std::string& src, bool replMode, const std::string& baseDir);
 
-static std::string shellQuote(const std::string& s) {
-    std::string o = "'";
-    for (char c : s) {
-        if (c == '\'') o += "'\\''";
-        else o += c;
-    }
-    o += "'";
-    return o;
-}
-
 // =============================================================================
-// AST → C++ code generator (core subset for `vela build`)
-// =============================================================================
-struct Codegen {
-    std::ostringstream o;
-    std::vector<std::string> errors;
-    int tmp = 0;
-    int indv = 0;
 
-    std::string T() { return "t" + std::to_string(tmp++); }
-    void I() { for (int i = 0; i < indv; ++i) o << "  "; }
-    void L(const std::string& s) { I(); o << s << '\n'; }
-    void err(const std::string& m) { errors.push_back(m); }
-
-    static std::string esc(const std::string& s) {
-        std::string r;
-        for (unsigned char c : s) {
-            if (c == '\\') r += "\\\\";
-            else if (c == '"') r += "\\\"";
-            else if (c == '\n') r += "\\n";
-            else if (c == '\t') r += "\\t";
-            else r += static_cast<char>(c);
-        }
-        return r;
-    }
-
-    std::string lit(const Value& v) {
-        if (v.kind == Value::Kind::Nil) return "Value::Nil()";
-        if (v.kind == Value::Kind::Bool) return v.b ? "Value::Bool(true)" : "Value::Bool(false)";
-        if (v.kind == Value::Kind::Num) {
-            std::ostringstream ss;
-            ss.precision(17);
-            ss << "Value::Num(" << v.n << ")";
-            return ss.str();
-        }
-        if (v.kind == Value::Kind::Str)
-            return "Value::Str(\"" + esc(v.s) + "\")";
-        err("codegen: unsupported literal");
-        return "Value::Nil()";
-    }
-
-    std::string ex(const ExprPtr& e) {
-        if (!e) { err("codegen: null expr"); return "Value::Nil()"; }
-        if (auto x = dynamic_cast<LiteralExpr*>(e.get())) return lit(x->value);
-        if (auto x = dynamic_cast<VarExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + ";");
-            L("{ Value* _p = env->lookup(\"" + esc(x->name) + "\");");
-            L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) +
-              ", \"undefined variable '" + esc(x->name) + "'\");");
-            L("  " + t + " = *_p;");
-            L("}");
-            return t;
-        }
-        if (auto x = dynamic_cast<UnaryExpr*>(e.get())) {
-            std::string a = ex(x->operand);
-            std::string t = T();
-            if (x->op == "-") {
-                L("Value " + t + " = Value::Num(-(" + a + ").n);");
-            } else if (x->op == "!") {
-                L("Value " + t + " = Value::Bool(!truthy(" + a + "));");
-            } else {
-                err("codegen: unsupported unary '" + x->op + "' at line " + std::to_string(x->line));
-                L("Value " + t + " = Value::Nil();");
-            }
-            return t;
-        }
-        if (auto x = dynamic_cast<BinaryExpr*>(e.get())) {
-            std::string t = T();
-            if (x->op == "??") {
-                std::string a = ex(x->left);
-                L("Value " + t + " = " + a + ";");
-                L("if ((" + t + ").isNil()) { " + t + " = " + ex(x->right) + "; }");
-                return t;
-            }
-            if (x->op == "&&") {
-                std::string a = ex(x->left);
-                L("Value " + t + ";");
-                L("if (!truthy(" + a + ")) { " + t + " = Value::Bool(false); }");
-                L("else { " + t + " = Value::Bool(truthy(" + ex(x->right) + ")); }");
-                return t;
-            }
-            if (x->op == "||") {
-                std::string a = ex(x->left);
-                L("Value " + t + ";");
-                L("if (truthy(" + a + ")) { " + t + " = Value::Bool(true); }");
-                L("else { " + t + " = Value::Bool(truthy(" + ex(x->right) + ")); }");
-                return t;
-            }
-            std::string a = ex(x->left);
-            std::string b = ex(x->right);
-            L("Value " + t + " = applyBinary(\"" + esc(x->op) + "\", " + a + ", " + b + ", " +
-              std::to_string(x->line) + ");");
-            return t;
-        }
-        if (auto x = dynamic_cast<CallExpr*>(e.get())) {
-            auto ve = dynamic_cast<VarExpr*>(x->callee.get());
-            if (!ve) {
-                err("codegen: only simple named calls supported at line " + std::to_string(x->line));
-                return "Value::Nil()";
-            }
-            std::string vec = T();
-            std::string t = T();
-            L("std::vector<Value> " + vec + ";");
-            for (auto& a : x->args) {
-                if (!a.name.empty())
-                    err("codegen: named arguments not supported at line " + std::to_string(x->line));
-                L(vec + ".push_back(" + ex(a.expr) + ");");
-            }
-            L("Value " + t + ";");
-            L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
-            L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) +
-              ", \"undefined function '" + esc(ve->name) + "'\");");
-            L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
-            L("}");
-            return t;
-        }
-        if (auto x = dynamic_cast<ArrayExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = Value::Arr(std::make_shared<std::vector<Value>>());");
-            for (auto& el : x->elems) {
-                if (el.spread) {
-                    err("codegen: array spread not supported at line " + std::to_string(x->line));
-                    continue;
-                }
-                L(t + ".arr->push_back(" + ex(el.expr) + ");");
-            }
-            return t;
-        }
-        if (auto x = dynamic_cast<MapExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = Value::Map(std::make_shared<std::map<std::string, Value>>());");
-            for (auto& pr : x->pairs) {
-                // key must be literal string for codegen
-                auto litk = dynamic_cast<LiteralExpr*>(pr.first.get());
-                if (!litk || litk->value.kind != Value::Kind::Str) {
-                    err("codegen: map keys must be string literals at line " + std::to_string(x->line));
-                    continue;
-                }
-                L("(*" + t + ".map)[\"" + esc(litk->value.s) + "\"] = " + ex(pr.second) + ";");
-            }
-            return t;
-        }
-        if (auto x = dynamic_cast<IndexExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = indexGet(" + ex(x->object) + ", " + ex(x->index) + ", " +
-              std::to_string(x->line) + ");");
-            return t;
-        }
-        if (auto x = dynamic_cast<StringInterpExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = Value::Str(\"\");");
-            for (auto& p : x->parts) {
-                if (p.isLiteral) L(t + ".s += \"" + esc(p.text) + "\";");
-                else L(t + ".s += " + ex(p.expr) + ".toString(false);");
-            }
-            return t;
-        }
-                if (auto x = dynamic_cast<PipeExpr*>(e.get())) {
-            // x |> f  or  x |> f(a)  →  treat right as CallExpr or VarExpr
-            if (auto call = dynamic_cast<CallExpr*>(x->right.get())) {
-                auto ve = dynamic_cast<VarExpr*>(call->callee.get());
-                if (!ve) { err("codegen: pipe call must be named at line " + std::to_string(x->line)); return "Value::Nil()"; }
-                std::string vec = T(); std::string t = T();
-                L("std::vector<Value> " + vec + ";");
-                L(vec + ".push_back(" + ex(x->left) + ");");
-                for (auto& a : call->args) {
-                    if (!a.name.empty()) err("codegen: named args in pipe at line " + std::to_string(x->line));
-                    L(vec + ".push_back(" + ex(a.expr) + ");");
-                }
-                L("Value " + t + ";");
-                L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
-                L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined\");");
-                L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
-                L("}");
-                return t;
-            }
-            if (auto ve = dynamic_cast<VarExpr*>(x->right.get())) {
-                std::string vec = T(); std::string t = T();
-                L("std::vector<Value> " + vec + ";");
-                L(vec + ".push_back(" + ex(x->left) + ");");
-                L("Value " + t + ";");
-                L("{ Value* _f = env->lookup(\"" + esc(ve->name) + "\");");
-                L("  if (!_f) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined\");");
-                L("  " + t + " = I.call(*_f, " + vec + ", " + std::to_string(x->line) + ");");
-                L("}");
-                return t;
-            }
-            err("codegen: unsupported pipe form at line " + std::to_string(x->line));
-            return "Value::Nil()";
-        }
-        if (auto x = dynamic_cast<FieldExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = indexGet(" + ex(x->object) + ", Value::Str(\"" + esc(x->field) + "\"), " +
-              std::to_string(x->line) + ");");
-            return t;
-        }
-        if (auto x = dynamic_cast<TernaryExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + ";");
-            L("if (truthy(" + ex(x->cond) + ")) { " + t + " = " + ex(x->thenE) + "; }");
-            L("else { " + t + " = " + ex(x->elseE) + "; }");
-            return t;
-        }
-        if (auto x = dynamic_cast<AssignExpr*>(e.get())) {
-            auto ve = dynamic_cast<VarExpr*>(x->target.get());
-            if (!ve) {
-                err("codegen: compound assign only for names at line " + std::to_string(x->line));
-                return "Value::Nil()";
-            }
-            std::string v = ex(x->value);
-            std::string t = T();
-            if (x->op == "+=" || x->op == "-=" || x->op == "*=" || x->op == "/=" || x->op == "%=") {
-                std::string binop = x->op.substr(0, 1);
-                L("Value " + t + ";");
-                L("{ Value* _p = env->lookup(\"" + esc(ve->name) + "\");");
-                L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined variable\");");
-                L("  " + t + " = applyBinary(\"" + binop + "\", *_p, " + v + ", " + std::to_string(x->line) + ");");
-                L("  Env* _o = env->owner(\"" + esc(ve->name) + "\");");
-                L("  if (!_o || _o->consts.count(\"" + esc(ve->name) + "\")) throw RuntimeError(" +
-                  std::to_string(x->line) + ", \"cannot assign\");");
-                L("  _o->vars[\"" + esc(ve->name) + "\"] = " + t + ";");
-                L("}");
-            } else {
-                err("codegen: unsupported assign op at line " + std::to_string(x->line));
-                L("Value " + t + " = Value::Nil();");
-            }
-            return t;
-        }
-        if (auto x = dynamic_cast<RangeExpr*>(e.get())) {
-            std::string t = T();
-            std::string a = ex(x->start);
-            std::string b = ex(x->end);
-            std::string st = x->step ? ex(x->step) : "Value::Num(1)";
-            L("Value " + t + " = Value::Range((" + a + ").n, (" + b + ").n, " +
-              std::string(x->inclusive ? "true" : "false") + ", (" + st + ").n);");
-            return t;
-        }
-        if (auto x = dynamic_cast<IsExpr*>(e.get())) {
-            std::string t = T();
-            L("Value " + t + " = Value::Bool(typeName(" + ex(x->operand) + ") == \"" + esc(x->typeName) + "\");");
-            return t;
-        }
-        err("codegen: unsupported expression at line " + std::to_string(e->line));
-        return "Value::Nil()";
-    }
-
-    void st(const StmtPtr& s) {
-        if (!s) return;
-        if (auto x = dynamic_cast<ExprStmt*>(s.get())) {
-            (void)ex(x->expr);
-            return;
-        }
-        if (auto x = dynamic_cast<BindStmt*>(s.get())) {
-            auto ve = dynamic_cast<VarExpr*>(x->target.get());
-            if (!ve) {
-                err("codegen: only simple name assignment at line " + std::to_string(x->line));
-                return;
-            }
-            std::string v = ex(x->value);
-            if (x->op == ":=") {
-                L("env->define(\"" + esc(ve->name) + "\", " + v + ", true);");
-            } else if (x->op == "+=" || x->op == "-=" || x->op == "*=" || x->op == "/=" || x->op == "%=") {
-                std::string binop = x->op.substr(0, 1);
-                L("{ Value* _p = env->lookup(\"" + esc(ve->name) + "\");");
-                L("  if (!_p) throw RuntimeError(" + std::to_string(x->line) + ", \"undefined variable\");");
-                L("  Value _nv = applyBinary(\"" + binop + "\", *_p, " + v + ", " + std::to_string(x->line) + ");");
-                L("  Env* _o = env->owner(\"" + esc(ve->name) + "\");");
-                L("  if (_o) { if (_o->consts.count(\"" + esc(ve->name) + "\")) throw RuntimeError(" + std::to_string(x->line) + ", \"immutable\"); _o->vars[\"" + esc(ve->name) + "\"] = _nv; }");
-                L("}");
-            } else {
-                L("{ Env* _o = env->owner(\"" + esc(ve->name) + "\");");
-                L("  if (_o) { if (_o->consts.count(\"" + esc(ve->name) +
-                  "\")) throw RuntimeError(" + std::to_string(x->line) +
-                  ", \"immutable\"); _o->vars[\"" + esc(ve->name) + "\"] = " + v + "; }");
-                L("  else env->define(\"" + esc(ve->name) + "\", " + v + ", false);");
-                L("}");
-            }
-            return;
-        }
-        if (auto x = dynamic_cast<IfStmt*>(s.get())) {
-            L("if (truthy(" + ex(x->cond) + ")) {");
-            indv++;
-            block(x->thenB);
-            indv--;
-            if (x->elseB) {
-                L("} else {");
-                indv++;
-                st(x->elseB);
-                indv--;
-            }
-            L("}");
-            return;
-        }
-        if (auto x = dynamic_cast<WhileStmt*>(s.get())) {
-            L("while (true) {");
-            indv++;
-            L("if (!truthy(" + ex(x->cond) + ")) break;");
-            L("try {");
-            indv++;
-            block(x->body);
-            indv--;
-            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
-            indv--;
-            L("}");
-            return;
-        }
-        if (auto x = dynamic_cast<ForRangeStmt*>(s.get())) {
-            std::string a = ex(x->start);
-            std::string b = ex(x->end);
-            std::string stv = x->step ? ex(x->step) : "Value::Num(1)";
-            std::string i = T();
-            L("for (double " + i + " = (" + a + ").n; " +
-              (x->inclusive ? i + " <= (" + b + ").n" : i + " < (" + b + ").n") +
-              "; " + i + " += (" + stv + ").n) {");
-            indv++;
-            L("EnvPtr _inner = std::make_shared<Env>(env);");
-            L("_inner->define(\"" + esc(x->var) + "\", Value::Num(" + i + "), false);");
-            L("{ EnvPtr env = _inner;");
-            L("try {");
-            indv++;
-            block(x->body);
-            indv--;
-            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
-            L("}");
-            indv--;
-            L("}");
-            return;
-        }
-        if (auto x = dynamic_cast<ForEachStmt*>(s.get())) {
-            std::string it = ex(x->iterable);
-            L("{ Value _it = " + it + ";");
-            L("  if (_it.kind != Value::Kind::Arr) throw RuntimeError(" +
-              std::to_string(x->line) + ", \"codegen repeat expects array\");");
-            L("  auto _snap = *_it.arr;");
-            L("  for (const auto& _el : _snap) {");
-            indv += 2;
-            L("EnvPtr _inner = std::make_shared<Env>(env);");
-            if (!x->destructure.empty()) {
-                L("if (_el.kind != Value::Kind::Arr) throw RuntimeError(" +
-                  std::to_string(x->line) + ", \"destructure needs array\");");
-                for (size_t di = 0; di < x->destructure.size(); di++) {
-                    L("_inner->define(\"" + esc(x->destructure[di]) +
-                      "\", " + std::to_string(di) + " < _el.arr->size() ? (*_el.arr)[" +
-                      std::to_string(di) + "] : Value::Nil(), false);");
-                }
-            } else {
-                L("_inner->define(\"" + esc(x->var) + "\", _el, false);");
-            }
-            L("{ EnvPtr env = _inner;");
-            L("try {");
-            indv++;
-            block(x->body);
-            indv--;
-            L("} catch (const BreakSignal&) { break; } catch (const ContinueSignal&) { continue; }");
-            L("}");
-            indv -= 2;
-            L("  }");
-            L("}");
-            return;
-        }
-        if (auto x = dynamic_cast<ReturnStmt*>(s.get())) {
-            if (x->value) L("throw ReturnSignal{" + ex(x->value) + "};");
-            else L("throw ReturnSignal{Value::Nil()};");
-            return;
-        }
-        if (auto x = dynamic_cast<FuncDeclStmt*>(s.get())) {
-            std::string nf = T();
-            L("{ auto " + nf + " = std::make_shared<NativeFunction>();");
-            L("  EnvPtr _clos_" + nf + " = env;");
-            L("  " + nf + "->fn = [_clos_" + nf + "](std::vector<Value>& args) -> Value {");
-            indv++;
-            L("EnvPtr env = std::make_shared<Env>(_clos_" + nf + ");");
-            for (size_t i = 0; i < x->params.size(); i++) {
-                L("env->define(\"" + esc(x->params[i].name) + "\", args.size() > " +
-                  std::to_string(i) + "u ? args[" + std::to_string(i) + "] : Value::Nil(), false);");
-            }
-            L("try {");
-            indv++;
-            block(x->body);
-            L("return Value::Nil();");
-            indv--;
-            L("} catch (const ReturnSignal& r) { return r.value; }");
-            indv--;
-            L("  };");
-            L("  env->define(\"" + esc(x->name) + "\", Value::Native(" + nf + "), true);");
-            L("}");
-            return;
-        }
-        if (auto x = dynamic_cast<BlockStmt*>(s.get())) {
-            for (auto& u : x->stmts) st(u);
-            return;
-        }
-        if (auto x = dynamic_cast<AssertStmt*>(s.get())) {
-            L("if (!truthy(" + ex(x->cond) + ")) {");
-            if (x->message) {
-                L("  throw RuntimeError(" + std::to_string(x->line) + ", (" + ex(x->message) + ").toString(false));");
-            } else {
-                L("  throw RuntimeError(" + std::to_string(x->line) + ", \"assertion failed\");");
-            }
-            L("}");
-            return;
-        }
-        err("codegen: unsupported statement at line " + std::to_string(s->line) +
-            " (supported: bind, functions, print/calls, when, loop, repeat, assert, arrays/maps)");
-    }
-
-    void block(const std::shared_ptr<BlockStmt>& b) {
-        if (!b) return;
-        for (auto& x : b->stmts) st(x);
-    }
-
-    std::string emitBody(const std::vector<StmtPtr>& prog) {
-        o.str("");
-        o.clear();
-        tmp = 0;
-        indv = 1;
-        errors.clear();
-        for (auto& s : prog) st(s);
-        return o.str();
-    }
-};
-
-static int buildNative(const std::string& velPath, const std::string& outPath) {
-    std::ifstream in(velPath, std::ios::binary);
-    if (!in) {
-        std::cerr << "error: cannot open '" << velPath << "'\n";
-        return 1;
-    }
-    std::stringstream ss;
-    ss << in.rdbuf();
-    std::string src = ss.str();
-
-    std::vector<StmtPtr> prog;
-    try {
-        setSource(src);
-        Lexer lex(src);
-        Parser parser(lex.scan());
-        prog = parser.parseProgram();
-    } catch (const ParseError& e) {
-        reportError("parse error", e.line, e.what());
-        std::cerr << "error: cannot build — fix parse errors first\n";
-        return 1;
-    }
-
-    {
-        std::ifstream test("vela.cpp");
-        if (!test) {
-            std::cerr << "error: cannot find vela.cpp (run build from project root)\n";
-            return 1;
-        }
-    }
-
-    Codegen cg;
-    std::string body = cg.emitBody(prog);
-    if (!cg.errors.empty()) {
-        std::cerr << "codegen: unsupported constructs (no silent embed fallback):\n";
-        for (const auto& e : cg.errors)
-            std::cerr << "  - " << e << "\n";
-        std::cerr << "hint: use ./vela file.vel for full language; "
-                     "build supports core subset only\n";
-        return 1;
-    }
-
-    std::string genPath = outPath + ".gen.cpp";
-    {
-        std::ofstream out(genPath);
-        out << "// Generated by Vela — AST lowered to C++ (core subset)\n";
-        out << "// Not source embedding: statements are compiled C++ using the Value runtime.\n";
-        out << "#include <cmath>\n#include <iostream>\n#include <map>\n#include <memory>\n";
-        out << "#include <string>\n#include <vector>\n";
-        out << "#define VELA_CODEGEN_APP 1\n";
-        out << "// Types and helpers come from linking with vela.cpp\n";
-        out << "struct Value; struct Interpreter; struct Env;\n";
-        out << "using EnvPtr = std::shared_ptr<Env>;\n";
-        out << "void vela_codegen_entry();\n";
-        out << "int main() { vela_codegen_entry(); return 0; }\n";
-    }
-
-    // Better approach: single TU — append generated body into a file that
-    // is compiled WITH vela.cpp via -include or combined.
-    // Write gen as a function body included from vela.cpp
-    {
-        std::ofstream out(genPath);
-        out << "// Generated by Vela AST→C++ codegen\n";
-        out << body;
-    }
-
-    // Compile: define VELA_CODEGEN_APP and VELA_GEN_INC path
-    std::string cmd = "g++ -std=c++17 -O2 -DVELA_CODEGEN_APP -DVELA_GEN_INC=\\\"" + genPath +
-                      "\\\" -o " + shellQuote(outPath) + " vela.cpp";
-    std::cerr << "codegen: AST → C++ (core subset)\n";
-    std::cerr << "compiling: " << cmd << "\n";
-    int rc = std::system(cmd.c_str());
-    std::remove(genPath.c_str());
-    if (rc != 0) {
-        std::cerr << "error: C++ compile failed\n";
-        return 1;
-    }
-    std::cerr << "wrote native binary: " << outPath << "\n";
-    return 0;
-}
-
-#ifdef VELA_CODEGEN_APP
-// Generated program body is #include'd — AST lowered to C++ using Value runtime
-static void vela_codegen_entry() {
-    Interpreter I;
-    g_activeInterp = &I;
-    I.dirStack.push_back(".");
-    EnvPtr env = I.global;
-    try {
-#ifdef VELA_GEN_INC
-#include VELA_GEN_INC
-#else
-#error "VELA_GEN_INC not defined"
-#endif
-    } catch (const RuntimeError& e) {
-        reportError("runtime error", e.line, e.what());
-        std::exit(1);
-    } catch (const ErrorSignal& e) {
-        reportError("runtime error", 0, e.value.toString(false));
-        std::exit(1);
-    } catch (const ReturnSignal&) {
-        // ignore top-level return
-    }
-    g_activeInterp = nullptr;
-}
-int main() {
-    vela_codegen_entry();
-    return 0;
-}
-#elif defined(VELA_STANDALONE)
-const char* vela_embedded_source();
-const char* vela_embedded_dir();
-int main() {
-    return runSource(vela_embedded_source(), false, vela_embedded_dir());
-}
-#else
 int main(int argc, char** argv) {
     std::string path;
-    std::string buildOut;
     bool dumpTokens = false;
-    bool doBuild = false;
 
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
-        if (a == "build") {
-            doBuild = true;
-        } else if (a == "-o" && i + 1 < argc) {
-            buildOut = argv[++i];
-        } else if (a == "--tokens") {
+        if (a == "--tokens") {
             dumpTokens = true;
         } else if (a == "--version" || a == "-V") {
             std::cout << "Vela 1.0.0\n";
             return 0;
         } else if (a == "--help" || a == "-h") {
-            std::cout << "Vela language\n"
-                      << "  vela                     interactive REPL\n"
-                      << "  vela <file.vel>          run a Vela script\n"
-                      << "  vela build <file.vel> -o <name>\n"
-                      << "                           compile to a native binary\n"
-                      << "                           (Linux/macOS: ELF/Mach-O; Windows: use MinGW g++)\n"
-                      << "  --tokens                 dump lexer tokens and exit\n"
-                      << "  --version                print version and exit\n"
-                      << "  --help                   show this help\n";
+            std::cout << "Vela — interpreted programming language\n"
+                      << "  vela                 start the REPL\n"
+                      << "  vela <file.vel>      run a Vela program\n"
+                      << "  --tokens             dump lexer tokens and exit\n"
+                      << "  --version            print version and exit\n"
+                      << "  --help               show this help\n";
             return 0;
         } else if (!a.empty() && a[0] != '-') {
             path = a;
@@ -5436,69 +4882,34 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (doBuild) {
-        if (path.empty()) {
-            std::cerr << "error: vela build requires a .vel file\n";
-            return 1;
-        }
-        if (buildOut.empty()) {
-            // default output name from input
-            buildOut = path;
-            size_t slash = buildOut.find_last_of("/\\");
-            if (slash != std::string::npos) buildOut = buildOut.substr(slash + 1);
-            size_t dot = buildOut.find_last_of('.');
-            if (dot != std::string::npos) buildOut = buildOut.substr(0, dot);
-            if (buildOut.empty()) buildOut = "a.out";
-        }
-        return buildNative(path, buildOut);
+    if (path.empty()) {
+        repl(); return 0;
     }
 
-    if (!path.empty()) {
-        std::ifstream in(path, std::ios::binary);
-        if (!in) {
-            std::cerr << "error: cannot open file '" << path << "'\n";
-            return 1;
-        }
-        std::stringstream ss;
-        ss << in.rdbuf();
-        std::string src = ss.str();
-        if (dumpTokens) {
-            try {
-                Lexer lex(src);
-                auto toks = lex.scan();
-                for (const auto& tok : toks) {
-                    std::cout << tok.line << "\t" << tok.lexeme;
-                    if (tok.type == Tok::Number) std::cout << "  (" << tok.num << ")";
-                    if (tok.type == Tok::String) std::cout << "  (str)";
-                    std::cout << '\n';
-                }
-            } catch (const ParseError& e) {
-                reportError("parse error", e.line, e.what());
-                return 1;
-            }
-            return 0;
-        }
-        g_programArgs.clear();
-        // script path + trailing args after the script name
-        g_programArgs.push_back(path);
-        // re-scan argv for args after path
-        bool seen = false;
-        for (int i = 1; i < argc; i++) {
-            std::string a = argv[i];
-            if (!seen) {
-                if (a == path) seen = true;
-                continue;
-            }
-            if (!a.empty() && a[0] == '-') continue;
-            g_programArgs.push_back(a);
-        }
-        return runSource(src, false, dirOf(path));
-    }
-    if (dumpTokens) {
-        std::cerr << "error: --tokens requires a file\n";
+    std::ifstream in(path);
+    if (!in) {
+        std::cerr << "error: cannot open " << path << "\n";
         return 1;
     }
-    repl();
-    return 0;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string src = ss.str();
+
+    if (dumpTokens) {
+        setSource(src);
+        Lexer lex(src);
+        auto toks = lex.scan();
+        for (const auto& tok : toks) {
+            std::cout << tok.line << "\t" << tok.lexeme << "\n";
+        }
+        return 0;
+    }
+
+    // base directory for imports
+    std::string dir = ".";
+    auto slash = path.find_last_of("/\\");
+    if (slash != std::string::npos) dir = path.substr(0, slash);
+
+    return runSource(src, false, dir);
 }
-#endif
+

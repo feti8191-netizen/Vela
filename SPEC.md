@@ -1,6 +1,7 @@
 # Vela Language Specification (working draft)
 
-This document states intended behavior. Where implementation and SPEC disagree, that is a bug (in either the SPEC or the code). Tests under `tests/` encode executable checks against this document.
+Vela is an **interpreted** language. This document states intended runtime behavior.  
+Where implementation and this SPEC disagree, that is a bug in one of them.
 
 ## 1. Source and evaluation
 
@@ -12,15 +13,12 @@ This document states intended behavior. Where implementation and SPEC disagree, 
 
 Nil, number, string, bool, array, map, set, range, function, native, record instance, enum variant.
 
-- `nil` and `false` are falsey; all other values are truthy in boolean contexts (including `0` and `""` — **numbers: zero is falsey** if the implementation treats it as such; see tests).
-- Array and map equality is deep (structural).
-
 ## 3. Bindings
 
 | Form | Meaning |
 |------|---------|
-| `x := e` | Bind `x` immutably in the current scope. Error if `x` already bound here. |
-| `x <- e` | Assign to mutable `x`, or create mutable `x` if unbound. Error if `x` is immutable. |
+| `x := e` | Bind `x` immutably. Error if `x` already bound in this scope. |
+| `x <- e` | Assign to mutable `x`, or create mutable `x`. Error if `x` is immutable. |
 
 ## 4. Functions
 
@@ -36,9 +34,9 @@ Nil, number, string, bool, array, map, set, range, function, native, record inst
 - Loop exit: `bail` or `stop`; continue: `skip` or `next` (error outside a loop)
 - `repeat i from A to B [by S]`, `through` for inclusive end
 - `repeat x in collection`
-- `repeat N times { ... }` — N iterations, no bind variable
+- `repeat N times { ... }`
 
-## 5b. Readable aliases (identical semantics)
+## 5b. Readable aliases
 
 | Word form | Symbol form |
 |-----------|-------------|
@@ -48,10 +46,9 @@ Nil, number, string, bool, array, map, set, range, function, native, record inst
 
 ## 5c. `is` and `in`
 
-- `e is Type` — type or enum/record tag checks
-- `e is empty` / `e is not empty` — nil, empty string, empty array, empty map/set
-- `e is nil` — nil check
-- `x in collection` — membership (array, string substring, map key, set)
+- `e is Type` — type or tag checks  
+- `e is empty` / `e is not empty`  
+- `x in collection` — membership  
 
 ## 6. Errors
 
@@ -61,13 +58,10 @@ Nil, number, string, bool, array, map, set, range, function, native, record inst
 
 ## 7. Modules
 
-- `import "path"` / `import "path" as name`
-- Paths resolve relative to the importing file’s directory; modules are cached.
+- `import "path"` / `import "path" as name` / selective import when supported  
+- Paths resolve relative to the importing file; modules are cached.
 
-## 8. Quality process
+## 8. Quality
 
-- Smoke: all files under `examples/` (includes `45_full_language_audit.vel`)
-- Optional: `tests/run_all.sh` when present
-- See `ROADMAP.md` for known gaps
-
-Correctness claims should cover bindings, control, data, functions, errors, and modules — not only loops or a single demo.
+- Smoke tests: programs under `examples/`
+- Interpreter entry: `./vela` and `./vela file.vel`

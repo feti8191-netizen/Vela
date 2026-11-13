@@ -1,5 +1,8 @@
 # Vela — Language Explanation
 
+Vela is an **interpreted** language: you run programs with `./vela file.vel` or the REPL. There is no compile-to-binary step in the language design.
+
+
 Vela is a general-purpose programming language built around a few clear ideas: explicit binding, explicit mutation, explicit function bodies, and a syntax that does not copy mainstream scripting languages. This document explains the language itself.
 
 ---
@@ -299,7 +302,6 @@ This is intentional host access, not a full systems-programming or GPU runtime.
 
 Source is tokenized, parsed into an AST, then evaluated by walking that tree. Runtime errors report a line and, when possible, the source line with a caret and binding hints.
 
-`vela build` packages a program with the runtime into a native OS binary; the embedded program is still interpreted unless a future codegen backend replaces that path.
 
 ---
 
@@ -310,7 +312,7 @@ Source is tokenized, parsed into an AST, then evaluated by walking that tree. Ru
 3. **Compact core** — few value kinds and control forms.  
 4. **Practical builtins** — scripting, text, math, files, process.
 
-Not part of the current language: static generics, traits, enums with associated data, generators, full concurrency, or complete AOT native codegen.
+Not required for day-to-day use: full concurrency, package manager, or a separate compile-to-binary step (Vela is interpreted).
 
 ---
 
