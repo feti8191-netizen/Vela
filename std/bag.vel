@@ -1,0 +1,31 @@
+// std/bag — multiset-ish helpers on maps (value = count)
+empty() ==> %{};
+add(b, item, amount := 1) ==> {
+    when has(b, str(item)) { b[str(item)] <- b[str(item)] + amount; }
+    else { b[str(item)] <- amount; }
+    -> b;
+};
+count_of(b, item) ==> {
+    k := str(item);
+    when has(b, k) { -> b[k]; }
+    else { -> 0; }
+};
+// expand bag to a flat list (order not guaranteed)
+to_list(b) ==> {
+    out <- [];
+    repeat k in keys(b) {
+        n <- b[k];
+        i <- 0;
+        loop {
+            when i >= n { stop; }
+            push(out, k);
+            i <- i + 1;
+        }
+    }
+    -> out;
+};
+size(b) ==> {
+    t <- 0;
+    repeat k in keys(b) { t <- t + b[k]; }
+    -> t;
+};

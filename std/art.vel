@@ -1,0 +1,60 @@
+// std/art — creative helpers on canvas builtins
+pick_ink(colors) ==> {
+    when len(colors) == 0 { -> nil; }
+    else {
+        i := floor(random() * len(colors));
+        when i >= len(colors) { i <- len(colors) - 1; }
+        ink(colors[i]);
+        -> colors[i];
+    }
+};
+blob(x, y, size, color) ==> {
+    ink(color);
+    no_edge();
+    circle(x, y, size);
+};
+ring(x, y, size, color, weight := 2) ==> {
+    no_ink();
+    edge(color);
+    edge_w(weight);
+    circle(x, y, size);
+};
+ngon(cx, cy, r, n, rot := 0) ==> {
+    when n < 3 { -> nil; }
+    pts <- [];
+    repeat i from 0 through n - 1 {
+        a := rot + (i * 6.28318530718) / n;
+        push(pts, [cx + cos(a) * r, cy + sin(a) * r]);
+    }
+    poly(pts);
+};
+star(cx, cy, r_outer, r_inner, points := 5) ==> {
+    pts <- [];
+    n := points * 2;
+    repeat i from 0 through n - 1 {
+        a := -1.57079632679 + (i * 6.28318530718) / n;
+        rr <- r_inner;
+        when i % 2 == 0 { rr <- r_outer; }
+        push(pts, [cx + cos(a) * rr, cy + sin(a) * rr]);
+    }
+    poly(pts);
+};
+// checkerboard fill of canvas
+checker(cell, c0, c1) ==> {
+    cols := ceil(art_width() / cell);
+    rows := ceil(art_height() / cell);
+    repeat row from 0 through rows {
+        repeat col from 0 through cols {
+            when (row + col) % 2 == 0 { ink(c0); }
+            else { ink(c1); }
+            no_edge();
+            box(col * cell, row * cell, cell, cell);
+        }
+    }
+};
+// vertical bar from bottom
+bar(x, width, height, color) ==> {
+    ink(color);
+    no_edge();
+    box(x, art_height() - height, width, height);
+};

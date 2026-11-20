@@ -1,0 +1,24 @@
+// std/fmt — small formatting helpers
+// pad number as string to width
+num_pad(n, width, fill := "0") ==> pad_left(str(n), width, fill);
+// join key=value pairs from map (stable enough for display)
+map_line(m, sep := ", ") ==> {
+    parts <- [];
+    repeat k in keys(m) {
+        push(parts, str(k) + "=" + str(m[k]));
+    }
+    -> join(parts, sep);
+};
+// bracket a string
+bracket(s, left := "[", right := "]") ==> left + str(s) + right;
+// repeat a string n times
+repeat_str(s, n) ==> {
+    out <- "";
+    i <- 0;
+    loop {
+        when i >= n { stop; }
+        out <- out + str(s);
+        i <- i + 1;
+    }
+    -> out;
+};
