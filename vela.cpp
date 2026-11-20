@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h>
@@ -76,7 +77,7 @@ struct RuntimeError : std::runtime_error {
 enum class Tok {
     Number, String, Ident,
     When, Else, Loop, Repeat, From, To, Through, In, Bail, Skip,
-    Assert, Is, Throw, Try, Catch, Record, New, Match, Import, As, Enum, Defer, By, Until, Unless, Trait, Impl, For,
+    Assert, Is, Throw, Try, Catch, Record, New, Match, Import, As, Enum, Defer, By, Until, Unless, Trait, Impl, For, Draw,
     True, False, Nil,
     Plus, Minus, Star, Slash, Percent, StarStar,
     Amp, Pipe, Caret, Tilde, Shl, Shr,
@@ -328,6 +329,7 @@ private:
         else if (text == "by")      type = Tok::By;
         else if (text == "until")   type = Tok::Until;
         else if (text == "unless")  type = Tok::Unless;
+        else if (text == "draw")    type = Tok::Draw;
         else if (text == "true")    type = Tok::True;
         else if (text == "false")   type = Tok::False;
         else if (text == "nil")     type = Tok::Nil;
@@ -700,6 +702,15 @@ struct WhileStmt : Stmt {
     std::shared_ptr<BlockStmt> body;
     WhileStmt(ExprPtr c, std::shared_ptr<BlockStmt> b, int l)
         : cond(std::move(c)), body(std::move(b)) { line = l; }
+    Value exec(const EnvPtr& env, Interpreter& I) override;
+};
+
+struct DrawStmt : Stmt {
+    ExprPtr width;
+    ExprPtr height;
+    std::shared_ptr<BlockStmt> body;
+    DrawStmt(ExprPtr w, ExprPtr h, std::shared_ptr<BlockStmt> b, int l)
+        : width(std::move(w)), height(std::move(h)), body(std::move(b)) { line = l; }
     Value exec(const EnvPtr& env, Interpreter& I) override;
 };
 
@@ -1854,6 +1865,21 @@ Value WhileStmt::exec(const EnvPtr& env, Interpreter& I) {
     return Value::Nil();
 }
 
+Value DrawStmt::exec(const EnvPtr& env, Interpreter& I) {
+    Value wv = width->eval(env, I);
+    Value hv = height->eval(env, I);
+    if (wv.kind != Value::Kind::Num || hv.kind != Value::Kind::Num)
+        throw RuntimeError(line, "draw WIDTH by HEIGHT expects number sizes");
+    std::vector<Value> args = { wv, hv };
+    Value* canvasPtr = I.global->lookup("canvas");
+    if (!canvasPtr) throw RuntimeError(line, "canvas builtin missing");
+    Value canvasFn = *canvasPtr;
+    I.call(canvasFn, args, line);
+    if (body) return body->exec(env, I);
+    return Value::Nil();
+}
+
+
 Value ForRangeStmt::exec(const EnvPtr& env, Interpreter& I) {
     Value sv = start->eval(env, I);
     Value ev = end->eval(env, I);
@@ -2281,6 +2307,260 @@ void Interpreter::run(const std::vector<StmtPtr>& program) {
         throw RuntimeError(0, "'next'/'skip' only works inside a loop or repeat");
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// Visual art — software canvas + BMP/PPM export (Vela drawing)
+// ---------------------------------------------------------------------------
+namespace vela_art {
+struct RGBA { uint8_t r=0, g=0, b=0, a=255; };
+struct Canvas {
+    int w = 0, h = 0;
+    std::vector<uint8_t> px; // RGBA row-major
+    RGBA fill{255,255,255,255};
+    RGBA stroke{0,0,0,255};
+    double strokeW = 1.0;
+    bool doFill = true;
+    bool doStroke = true;
+    bool active = false;
+
+    void ensure() const {
+        if (!active || w <= 0 || h <= 0)
+            throw RuntimeError(0, "no canvas — call canvas(width, height) first");
+    }
+    void resize(int nw, int nh) {
+        if (nw <= 0 || nh <= 0 || nw > 8192 || nh > 8192)
+            throw RuntimeError(0, "canvas size must be 1..8192");
+        w = nw; h = nh;
+        px.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 4u, 255);
+        // default clear white-ish dark ground will be set by ground()
+        for (size_t i = 0; i < px.size(); i += 4) {
+            px[i] = 20; px[i+1] = 20; px[i+2] = 28; px[i+3] = 255;
+        }
+        active = true;
+    }
+    size_t idx(int x, int y) const {
+        return (static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)) * 4u;
+    }
+    void blend(int x, int y, RGBA c) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return;
+        size_t i = idx(x, y);
+        if (c.a >= 255) {
+            px[i] = c.r; px[i+1] = c.g; px[i+2] = c.b; px[i+3] = 255;
+            return;
+        }
+        float a = c.a / 255.f;
+        float ia = 1.f - a;
+        px[i]   = static_cast<uint8_t>(c.r * a + px[i]   * ia);
+        px[i+1] = static_cast<uint8_t>(c.g * a + px[i+1] * ia);
+        px[i+2] = static_cast<uint8_t>(c.b * a + px[i+2] * ia);
+        px[i+3] = 255;
+    }
+    void clear(RGBA c) {
+        ensure();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                size_t i = idx(x, y);
+                px[i]=c.r; px[i+1]=c.g; px[i+2]=c.b; px[i+3]=255;
+            }
+    }
+    void setPixel(int x, int y, RGBA c) { blend(x, y, c); }
+
+    void drawLine(int x0, int y0, int x1, int y1, RGBA c, int thickness) {
+        auto plot = [&](int x, int y) {
+            if (thickness <= 1) { setPixel(x, y, c); return; }
+            int r = thickness / 2;
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                    if (dx*dx + dy*dy <= r*r + r) setPixel(x+dx, y+dy, c);
+        };
+        int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        while (true) {
+            plot(x0, y0);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+    void fillRect(int x, int y, int bw, int bh, RGBA c) {
+        for (int j = 0; j < bh; j++)
+            for (int i = 0; i < bw; i++)
+                setPixel(x + i, y + j, c);
+    }
+    void strokeRect(int x, int y, int bw, int bh, RGBA c, int t) {
+        drawLine(x, y, x+bw-1, y, c, t);
+        drawLine(x, y+bh-1, x+bw-1, y+bh-1, c, t);
+        drawLine(x, y, x, y+bh-1, c, t);
+        drawLine(x+bw-1, y, x+bw-1, y+bh-1, c, t);
+    }
+    void fillCircle(int cx, int cy, int rad, RGBA c) {
+        if (rad < 0) return;
+        int r2 = rad * rad;
+        for (int y = -rad; y <= rad; y++)
+            for (int x = -rad; x <= rad; x++)
+                if (x*x + y*y <= r2) setPixel(cx+x, cy+y, c);
+    }
+    void fillEllipse(int cx, int cy, int rw, int rh, RGBA c) {
+        if (rw <= 0 || rh <= 0) return;
+        for (int y = -rh; y <= rh; y++)
+            for (int x = -rw; x <= rw; x++) {
+                double nx = double(x) / rw, ny = double(y) / rh;
+                if (nx*nx + ny*ny <= 1.0) setPixel(cx+x, cy+y, c);
+            }
+    }
+    void strokeEllipse(int cx, int cy, int rw, int rh, RGBA c, int t) {
+        if (rw <= 0 || rh <= 0) return;
+        int outer = std::max(1, t);
+        for (int y = -rh - outer; y <= rh + outer; y++)
+            for (int x = -rw - outer; x <= rw + outer; x++) {
+                double nx = double(x) / rw, ny = double(y) / rh;
+                double d = nx*nx + ny*ny;
+                double nx2 = double(x) / (rw + outer), ny2 = double(y) / (rh + outer);
+                double dout = nx2*nx2 + ny2*ny2;
+                if (d > 1.0 && dout <= 1.0) setPixel(cx+x, cy+y, c);
+            }
+    }
+    void strokeCircle(int cx, int cy, int rad, RGBA c, int t) {
+        if (rad <= 0) { setPixel(cx, cy, c); return; }
+        // ring between rad-t/2 and rad+t/2
+        int outer = rad + std::max(0, t/2);
+        int inner = std::max(0, rad - std::max(1, t/2));
+        int o2 = outer*outer, i2 = inner*inner;
+        for (int y = -outer; y <= outer; y++)
+            for (int x = -outer; x <= outer; x++) {
+                int d = x*x + y*y;
+                if (d <= o2 && d >= i2) setPixel(cx+x, cy+y, c);
+            }
+    }
+    void fillTriangle(int x0,int y0,int x1,int y1,int x2,int y2, RGBA c) {
+        // barycentric bounding box
+        int minx = std::min({x0,x1,x2}), maxx = std::max({x0,x1,x2});
+        int miny = std::min({y0,y1,y2}), maxy = std::max({y0,y1,y2});
+        auto area = [](int ax,int ay,int bx,int by,int cx,int cy) {
+            return (bx-ax)*(cy-ay) - (by-ay)*(cx-ax);
+        };
+        int A = area(x0,y0,x1,y1,x2,y2);
+        if (A == 0) return;
+        for (int y = miny; y <= maxy; y++)
+            for (int x = minx; x <= maxx; x++) {
+                int a0 = area(x1,y1,x2,y2,x,y);
+                int a1 = area(x2,y2,x0,y0,x,y);
+                int a2 = area(x0,y0,x1,y1,x,y);
+                if ((A > 0 && a0 >= 0 && a1 >= 0 && a2 >= 0) ||
+                    (A < 0 && a0 <= 0 && a1 <= 0 && a2 <= 0))
+                    setPixel(x, y, c);
+            }
+    }
+};
+
+static Canvas g;
+
+static RGBA parseColor(const Value& v);
+static RGBA colorFromArgs(const std::vector<Value>& args, const char* ctx) {
+    if (args.size() == 1) return parseColor(args[0]);
+    if (args.size() == 3 || args.size() == 4) {
+        auto ch = [&](size_t i) {
+            if (args[i].kind != Value::Kind::Num)
+                throw RuntimeError(0, std::string(ctx) + " expects numbers for r,g,b components");
+            return static_cast<uint8_t>(std::max(0.0, std::min(255.0, args[i].n)));
+        };
+        uint8_t a = 255;
+        if (args.size() == 4) a = ch(3);
+        return RGBA{ch(0), ch(1), ch(2), a};
+    }
+    throw RuntimeError(0, std::string(ctx) + " expects color string, gray, [r,g,b], or r,g,b[,a]");
+}
+static RGBA parseColor(const Value& v) {
+    if (v.kind == Value::Kind::Num) {
+        int g = static_cast<int>(std::max(0.0, std::min(255.0, v.n)));
+        return RGBA{static_cast<uint8_t>(g),static_cast<uint8_t>(g),static_cast<uint8_t>(g),255};
+    }
+    if (v.kind == Value::Kind::Arr && v.arr && v.arr->size() >= 3) {
+        auto ch = [&](size_t i) {
+            double n = (*v.arr)[i].kind == Value::Kind::Num ? (*v.arr)[i].n : 0;
+            return static_cast<uint8_t>(std::max(0.0, std::min(255.0, n)));
+        };
+        uint8_t a = 255;
+        if (v.arr->size() >= 4) a = ch(3);
+        return RGBA{ch(0),ch(1),ch(2),a};
+    }
+    if (v.kind != Value::Kind::Str)
+        throw RuntimeError(0, "color expects \"#rrggbb\", gray number, or [r,g,b]");
+    std::string s = v.s;
+    if (!s.empty() && s[0] == '#') s = s.substr(1);
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c-'0';
+        if (c >= 'a' && c <= 'f') return c-'a'+10;
+        if (c >= 'A' && c <= 'F') return c-'A'+10;
+        return 0;
+    };
+    if (s.size() == 3) {
+        int r = hex(s[0])*17, g = hex(s[1])*17, b = hex(s[2])*17;
+        return RGBA{static_cast<uint8_t>(r),static_cast<uint8_t>(g),static_cast<uint8_t>(b),255};
+    }
+    if (s.size() >= 6) {
+        int r = hex(s[0])*16+hex(s[1]);
+        int g = hex(s[2])*16+hex(s[3]);
+        int b = hex(s[4])*16+hex(s[5]);
+        int a = 255;
+        if (s.size() >= 8) a = hex(s[6])*16+hex(s[7]);
+        return RGBA{static_cast<uint8_t>(r),static_cast<uint8_t>(g),static_cast<uint8_t>(b),static_cast<uint8_t>(a)};
+    }
+    throw RuntimeError(0, "bad color string (use #rgb or #rrggbb)");
+}
+
+static int iNum(const Value& v, const char* ctx) {
+    if (v.kind != Value::Kind::Num) throw RuntimeError(0, std::string(ctx) + " expects numbers");
+    return static_cast<int>(std::lround(v.n));
+}
+
+static bool saveBMP(const std::string& path) {
+    g.ensure();
+    int w = g.w, h = g.h;
+    int rowSize = (w * 3 + 3) & ~3;
+    int dataSize = rowSize * h;
+    int fileSize = 54 + dataSize;
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    auto u16 = [&](uint16_t v) { out.put(char(v & 255)); out.put(char((v>>8)&255)); };
+    auto u32 = [&](uint32_t v) {
+        out.put(char(v & 255)); out.put(char((v>>8)&255));
+        out.put(char((v>>16)&255)); out.put(char((v>>24)&255));
+    };
+    out.put('B'); out.put('M');
+    u32(fileSize); u32(0); u32(54);
+    u32(40); u32(w); u32(h);
+    u16(1); u16(24); u32(0); u32(dataSize);
+    u32(2835); u32(2835); u32(0); u32(0);
+    std::vector<char> row(rowSize, 0);
+    for (int y = h - 1; y >= 0; y--) {
+        for (int x = 0; x < w; x++) {
+            size_t i = g.idx(x, y);
+            row[x*3+0] = char(g.px[i+2]); // B
+            row[x*3+1] = char(g.px[i+1]); // G
+            row[x*3+2] = char(g.px[i+0]); // R
+        }
+        out.write(row.data(), rowSize);
+    }
+    return bool(out);
+}
+
+static bool savePPM(const std::string& path) {
+    g.ensure();
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    out << "P6\n" << g.w << " " << g.h << "\n255\n";
+    for (int y = 0; y < g.h; y++)
+        for (int x = 0; x < g.w; x++) {
+            size_t i = g.idx(x, y);
+            out.put(char(g.px[i])); out.put(char(g.px[i+1])); out.put(char(g.px[i+2]));
+        }
+    return bool(out);
+}
+} // namespace vela_art
 
 Interpreter::Interpreter() : rng(std::random_device{}()) {
     global = std::make_shared<Env>();
@@ -3230,6 +3510,322 @@ def("starts_with", [](std::vector<Value>& args) -> Value {
     });
 
 
+
+    // --- Visual art ---
+    def("rgb", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 3) throw RuntimeError(0, "rgb expects (r, g, b) each 0..255");
+        auto arr = std::make_shared<std::vector<Value>>();
+        for (int i = 0; i < 3; i++) {
+            if (args[i].kind != Value::Kind::Num) throw RuntimeError(0, "rgb components must be numbers");
+            arr->push_back(Value::Num(std::max(0.0, std::min(255.0, args[i].n))));
+        }
+        return Value::Arr(arr);
+    });
+    def("rgba", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 4) throw RuntimeError(0, "rgba expects (r, g, b, a) each 0..255");
+        auto arr = std::make_shared<std::vector<Value>>();
+        for (int i = 0; i < 4; i++) {
+            if (args[i].kind != Value::Kind::Num) throw RuntimeError(0, "rgba components must be numbers");
+            arr->push_back(Value::Num(std::max(0.0, std::min(255.0, args[i].n))));
+        }
+        return Value::Arr(arr);
+    });
+    def("canvas", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2)
+            throw RuntimeError(0, "canvas expects (width, height)");
+        int w = vela_art::iNum(args[0], "canvas");
+        int h = vela_art::iNum(args[1], "canvas");
+        vela_art::g.resize(w, h);
+        return Value::Nil();
+    });
+    def("ground", [](std::vector<Value>& args) -> Value {
+        if (args.empty()) throw RuntimeError(0, "ground expects a color or r,g,b");
+        vela_art::g.ensure();
+        vela_art::g.clear(vela_art::colorFromArgs(args, "ground"));
+        return Value::Nil();
+    });
+    def("paper", [](std::vector<Value>& args) -> Value {
+        if (args.empty()) throw RuntimeError(0, "paper expects a color or r,g,b");
+        vela_art::g.ensure();
+        vela_art::g.clear(vela_art::colorFromArgs(args, "paper"));
+        return Value::Nil();
+    });
+    def("ink", [](std::vector<Value>& args) -> Value {
+        if (args.empty()) throw RuntimeError(0, "ink expects a color or r,g,b");
+        vela_art::g.fill = vela_art::colorFromArgs(args, "ink");
+        vela_art::g.doFill = true;
+        return Value::Nil();
+    });
+    def("paint", [](std::vector<Value>& args) -> Value {
+        if (args.empty()) throw RuntimeError(0, "paint expects a color or r,g,b");
+        vela_art::g.fill = vela_art::colorFromArgs(args, "paint");
+        vela_art::g.doFill = true;
+        return Value::Nil();
+    });
+    def("edge", [](std::vector<Value>& args) -> Value {
+        if (args.empty()) throw RuntimeError(0, "edge expects a color or r,g,b");
+        vela_art::g.stroke = vela_art::colorFromArgs(args, "edge");
+        vela_art::g.doStroke = true;
+        return Value::Nil();
+    });
+    def("edge_w", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Num)
+            throw RuntimeError(0, "edge_w expects a number");
+        vela_art::g.strokeW = std::max(1.0, args[0].n);
+        return Value::Nil();
+    });
+    def("no_ink", [](std::vector<Value>&) -> Value {
+        vela_art::g.doFill = false;
+        return Value::Nil();
+    });
+    def("no_edge", [](std::vector<Value>&) -> Value {
+        vela_art::g.doStroke = false;
+        return Value::Nil();
+    });
+    def("dot", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw RuntimeError(0, "dot expects (x, y)");
+        vela_art::g.ensure();
+        int x = vela_art::iNum(args[0], "dot");
+        int y = vela_art::iNum(args[1], "dot");
+        auto c = vela_art::g.doStroke ? vela_art::g.stroke : vela_art::g.fill;
+        int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+        if (t <= 1) vela_art::g.setPixel(x, y, c);
+        else {
+            int r = t / 2;
+            for (int dy=-r; dy<=r; dy++)
+                for (int dx=-r; dx<=r; dx++)
+                    if (dx*dx+dy*dy <= r*r+r) vela_art::g.setPixel(x+dx, y+dy, c);
+        }
+        return Value::Nil();
+    });
+    def("line", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 4) throw RuntimeError(0, "line expects (x1, y1, x2, y2)");
+        vela_art::g.ensure();
+        int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+        vela_art::g.drawLine(
+            vela_art::iNum(args[0],"line"), vela_art::iNum(args[1],"line"),
+            vela_art::iNum(args[2],"line"), vela_art::iNum(args[3],"line"),
+            vela_art::g.stroke, std::max(1, t));
+        return Value::Nil();
+    });
+    def("box", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 4) throw RuntimeError(0, "box expects (x, y, w, h)");
+        vela_art::g.ensure();
+        int x = vela_art::iNum(args[0],"box");
+        int y = vela_art::iNum(args[1],"box");
+        int bw = vela_art::iNum(args[2],"box");
+        int bh = vela_art::iNum(args[3],"box");
+        if (bw < 0) { x += bw; bw = -bw; }
+        if (bh < 0) { y += bh; bh = -bh; }
+        if (vela_art::g.doFill) vela_art::g.fillRect(x, y, bw, bh, vela_art::g.fill);
+        if (vela_art::g.doStroke) {
+            int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+            vela_art::g.strokeRect(x, y, bw, bh, vela_art::g.stroke, std::max(1, t));
+        }
+        return Value::Nil();
+    });
+    def("circle", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 3) throw RuntimeError(0, "circle expects (cx, cy, size) — size is diameter");
+        vela_art::g.ensure();
+        int cx = vela_art::iNum(args[0],"circle");
+        int cy = vela_art::iNum(args[1],"circle");
+        int size = std::abs(vela_art::iNum(args[2],"circle"));
+        int rad = size / 2;
+        if (vela_art::g.doFill) vela_art::g.fillCircle(cx, cy, rad, vela_art::g.fill);
+        if (vela_art::g.doStroke) {
+            int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+            vela_art::g.strokeCircle(cx, cy, rad, vela_art::g.stroke, std::max(1, t));
+        }
+        return Value::Nil();
+    });
+
+    def("ellipse", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 4) throw RuntimeError(0, "ellipse expects (cx, cy, width, height)");
+        vela_art::g.ensure();
+        int cx = vela_art::iNum(args[0],"ellipse");
+        int cy = vela_art::iNum(args[1],"ellipse");
+        int rw = std::abs(vela_art::iNum(args[2],"ellipse")) / 2;
+        int rh = std::abs(vela_art::iNum(args[3],"ellipse")) / 2;
+        if (vela_art::g.doFill) vela_art::g.fillEllipse(cx, cy, rw, rh, vela_art::g.fill);
+        if (vela_art::g.doStroke) {
+            int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+            vela_art::g.strokeEllipse(cx, cy, rw, rh, vela_art::g.stroke, std::max(1, t));
+        }
+        return Value::Nil();
+    });
+    def("poly", [](std::vector<Value>& args) -> Value {
+        // poly([[x,y], [x,y], ...])
+        if (args.size() != 1 || args[0].kind != Value::Kind::Arr)
+            throw RuntimeError(0, "poly expects an array of [x,y] points");
+        vela_art::g.ensure();
+        auto& pts = *args[0].arr;
+        if (pts.size() < 3) throw RuntimeError(0, "poly needs at least 3 points");
+        std::vector<std::pair<int,int>> p;
+        p.reserve(pts.size());
+        for (const auto& pt : pts) {
+            if (pt.kind != Value::Kind::Arr || !pt.arr || pt.arr->size() < 2)
+                throw RuntimeError(0, "poly points must be [x, y]");
+            p.push_back({vela_art::iNum((*pt.arr)[0], "poly"), vela_art::iNum((*pt.arr)[1], "poly")});
+        }
+        // fan triangulation from first point for fill
+        if (vela_art::g.doFill) {
+            for (size_t i = 1; i + 1 < p.size(); i++)
+                vela_art::g.fillTriangle(p[0].first, p[0].second,
+                    p[i].first, p[i].second, p[i+1].first, p[i+1].second, vela_art::g.fill);
+        }
+        if (vela_art::g.doStroke) {
+            int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+            for (size_t i = 0; i < p.size(); i++) {
+                auto& a = p[i];
+                auto& b = p[(i + 1) % p.size()];
+                vela_art::g.drawLine(a.first, a.second, b.first, b.second, vela_art::g.stroke, std::max(1,t));
+            }
+        }
+        return Value::Nil();
+    });
+    def("gradient", [](std::vector<Value>& args) -> Value {
+        // gradient(colorTop, colorBottom) — vertical fill of whole canvas
+        if (args.size() != 2) throw RuntimeError(0, "gradient expects (topColor, bottomColor)");
+        vela_art::g.ensure();
+        auto c0 = vela_art::parseColor(args[0]);
+        auto c1 = vela_art::parseColor(args[1]);
+        for (int y = 0; y < vela_art::g.h; y++) {
+            double t = vela_art::g.h <= 1 ? 0.0 : double(y) / double(vela_art::g.h - 1);
+            vela_art::RGBA c;
+            c.r = static_cast<uint8_t>(c0.r + (c1.r - c0.r) * t);
+            c.g = static_cast<uint8_t>(c0.g + (c1.g - c0.g) * t);
+            c.b = static_cast<uint8_t>(c0.b + (c1.b - c0.b) * t);
+            c.a = 255;
+            for (int x = 0; x < vela_art::g.w; x++) vela_art::g.setPixel(x, y, c);
+        }
+        return Value::Nil();
+    });
+
+    def("gradient_h", [](std::vector<Value>& args) -> Value {
+        // gradient_h(leftColor, rightColor) — horizontal
+        if (args.size() != 2) throw RuntimeError(0, "gradient_h expects (leftColor, rightColor)");
+        vela_art::g.ensure();
+        auto c0 = vela_art::parseColor(args[0]);
+        auto c1 = vela_art::parseColor(args[1]);
+        for (int x = 0; x < vela_art::g.w; x++) {
+            double tt = vela_art::g.w <= 1 ? 0.0 : double(x) / double(vela_art::g.w - 1);
+            vela_art::RGBA c;
+            c.r = static_cast<uint8_t>(c0.r + (c1.r - c0.r) * tt);
+            c.g = static_cast<uint8_t>(c0.g + (c1.g - c0.g) * tt);
+            c.b = static_cast<uint8_t>(c0.b + (c1.b - c0.b) * tt);
+            c.a = 255;
+            for (int y = 0; y < vela_art::g.h; y++) vela_art::g.setPixel(x, y, c);
+        }
+        return Value::Nil();
+    });
+    def("art_get_pixel", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw RuntimeError(0, "art_get_pixel expects (x, y)");
+        vela_art::g.ensure();
+        int x = vela_art::iNum(args[0], "art_get_pixel");
+        int y = vela_art::iNum(args[1], "art_get_pixel");
+        if (x < 0 || y < 0 || x >= vela_art::g.w || y >= vela_art::g.h)
+            return Value::Nil();
+        size_t i = vela_art::g.idx(x, y);
+        auto arr = std::make_shared<std::vector<Value>>();
+        arr->push_back(Value::Num(vela_art::g.px[i]));
+        arr->push_back(Value::Num(vela_art::g.px[i+1]));
+        arr->push_back(Value::Num(vela_art::g.px[i+2]));
+        return Value::Arr(arr);
+    });
+    def("tri", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 6) throw RuntimeError(0, "tri expects (x1,y1,x2,y2,x3,y3)");
+        vela_art::g.ensure();
+        int x0=vela_art::iNum(args[0],"tri"), y0=vela_art::iNum(args[1],"tri");
+        int x1=vela_art::iNum(args[2],"tri"), y1=vela_art::iNum(args[3],"tri");
+        int x2=vela_art::iNum(args[4],"tri"), y2=vela_art::iNum(args[5],"tri");
+        if (vela_art::g.doFill) vela_art::g.fillTriangle(x0,y0,x1,y1,x2,y2, vela_art::g.fill);
+        if (vela_art::g.doStroke) {
+            int t = static_cast<int>(std::lround(vela_art::g.strokeW));
+            auto c = vela_art::g.stroke;
+            vela_art::g.drawLine(x0,y0,x1,y1,c,t);
+            vela_art::g.drawLine(x1,y1,x2,y2,c,t);
+            vela_art::g.drawLine(x2,y2,x0,y0,c,t);
+        }
+        return Value::Nil();
+    });
+
+    def("noise", [](std::vector<Value>& args) -> Value {
+        // value noise in [0,1) — deterministic hash-based
+        auto fade = [](double t) { return t * t * t * (t * (t * 6 - 15) + 10); };
+        auto lerp = [](double a, double b, double t) { return a + (b - a) * t; };
+        auto hash = [](int x, int y) -> double {
+            uint32_t n = static_cast<uint32_t>(x) * 374761393u + static_cast<uint32_t>(y) * 668265263u;
+            n = (n ^ (n >> 13)) * 1274126177u;
+            n ^= (n >> 16);
+            return (n & 0x7fffffff) / static_cast<double>(0x80000000u);
+        };
+        if (args.size() == 1 && args[0].kind == Value::Kind::Num) {
+            double x = args[0].n;
+            int x0 = static_cast<int>(std::floor(x));
+            double tx = fade(x - x0);
+            return Value::Num(lerp(hash(x0, 0), hash(x0 + 1, 0), tx));
+        }
+        if (args.size() == 2 && args[0].kind == Value::Kind::Num && args[1].kind == Value::Kind::Num) {
+            double x = args[0].n, y = args[1].n;
+            int x0 = static_cast<int>(std::floor(x));
+            int y0 = static_cast<int>(std::floor(y));
+            double tx = fade(x - x0);
+            double ty = fade(y - y0);
+            double v00 = hash(x0, y0), v10 = hash(x0+1, y0);
+            double v01 = hash(x0, y0+1), v11 = hash(x0+1, y0+1);
+            double a = lerp(v00, v10, tx);
+            double b = lerp(v01, v11, tx);
+            return Value::Num(lerp(a, b, ty));
+        }
+        throw RuntimeError(0, "noise expects (x) or (x, y)");
+    });
+    def("art_pixel", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 3) throw RuntimeError(0, "art_pixel expects (x, y, color)");
+        vela_art::g.ensure();
+        int x = vela_art::iNum(args[0], "art_pixel");
+        int y = vela_art::iNum(args[1], "art_pixel");
+        vela_art::g.setPixel(x, y, vela_art::parseColor(args[2]));
+        return Value::Nil();
+    });
+    def("save_art", [](std::vector<Value>& args) -> Value {
+        if (args.size() != 1 || args[0].kind != Value::Kind::Str)
+            throw RuntimeError(0, "save_art expects a file path string");
+        std::string path = args[0].s;
+        bool ok = false;
+        auto ends = [&](const char* suf) {
+            size_t n = std::strlen(suf);
+            return path.size() >= n && path.compare(path.size()-n, n, suf) == 0;
+        };
+        if (ends(".ppm") || ends(".PPM")) ok = vela_art::savePPM(path);
+        else {
+            // default BMP (also if .bmp / .png / anything else)
+            if (ends(".png") || ends(".PNG")) {
+                // honest: write .bmp alongside note — still write BMP bytes to given path if user insists
+                // Prefer rewriting extension to .bmp for correctness when .png requested
+                std::string bmp = path;
+                if (ends(".png")) bmp = path.substr(0, path.size()-4) + ".bmp";
+                if (ends(".PNG")) bmp = path.substr(0, path.size()-4) + ".bmp";
+                ok = vela_art::saveBMP(bmp);
+                if (ok && bmp != path) {
+                    // also try original path as bmp content with .bmp name only
+                }
+                path = bmp;
+            } else {
+                ok = vela_art::saveBMP(path);
+            }
+        }
+        if (!ok) throw RuntimeError(0, "save_art failed to write: " + path);
+        return Value::Str(path);
+    });
+    def("art_width", [](std::vector<Value>&) -> Value {
+        vela_art::g.ensure();
+        return Value::Num(vela_art::g.w);
+    });
+    def("art_height", [](std::vector<Value>&) -> Value {
+        vela_art::g.ensure();
+        return Value::Num(vela_art::g.h);
+    });
+
     def("exit", [](std::vector<Value>& args) -> Value {
         int code = 0;
         if (args.size() >= 1 && args[0].kind == Value::Kind::Num)
@@ -3477,6 +4073,17 @@ private:
     }
 
     StmtPtr statement() {
+        if (check(Tok::Draw)) {
+            int l = advance().line;
+            if (check(Tok::LBrace))
+                throw ParseError(l, "draw needs sizes: draw WIDTH by HEIGHT { ... }");
+            ExprPtr w = expression();
+            if (!match(Tok::By))
+                throw ParseError(peek().line, "expected 'by' in: draw WIDTH by HEIGHT { ... }");
+            ExprPtr h = expression();
+            auto body = block();
+            return std::make_shared<DrawStmt>(w, h, body, l);
+        }
         if (check(Tok::When))    { advance(); return whenStmt(); }
         if (check(Tok::Unless)) {
             int l = advance().line;

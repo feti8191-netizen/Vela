@@ -1,185 +1,108 @@
 # Vela
 
-**Vela** is an **interpreted** general-purpose programming language.  
-You write `.vel` files (or use the REPL); the Vela program reads them and runs them. There is no separate compile/build step.
-
-Implemented from scratch in portable **C++17**.
+**Vela** is an interpreted general-purpose language with its own syntax — not a Python clone.  
+You write `.vel` files and run them with the Vela interpreter (or use the REPL).
 
 ```bash
-g++ -std=c++17 -O2 -Wall -Wextra -pedantic -o vela vela.cpp
-# or: make
-
-./vela                  # interactive REPL
-./vela examples/01_hello.vel
+make
+./vela                         # REPL
+./vela examples/01_hello.vel   # run a file
 ```
 
----
-
-## Language rules
-
-These rules apply everywhere in the language:
-
-1. **Names**
-   - `:=` creates a name once (fixed).
-   - `<-` creates or updates a changeable name.
-   - Using `:=` again on the same name in the same scope is an error.
-
-2. **Blocks**
-   - `when` always needs a condition before `{`.
-   - `stop` / `bail` and `next` / `skip` only work inside `loop` / `repeat`.
-
-3. **Same meaning, two spellings**
-   - `and` / `or` / `not` = `&&` / `||` / `!`
-   - `stop` / `next` = `bail` / `skip`
-   - `ask` / `say` = `readline` / `print`
-
-4. **`is`** — kind or state: `x is num`, `x is empty`, `x is nil`
-
-5. **`in`** — membership: `3 in nums`, or `repeat x in list`
-
-6. **Math needs numbers** — use `try_num(...)` for user input; check for `nil` before `+ - * /`.
-
-7. **Top to bottom** — code after a `when` still runs unless it sits inside that branch.
+**Learn the language in depth:** see **[TUTORIAL.md](TUTORIAL.md)** — full tutorial (tokens, bindings, control flow, functions, collections, modules, errors, records, **visual art**, builtins, std, REPL, common mistakes).  
+**Behavior notes:** [SPEC.md](SPEC.md) · **Design status:** [ROADMAP.md](ROADMAP.md) · **Narrative guide:** [explain.md](explain.md)
 
 ---
 
-## Quick start
+## Core rules
+
+1. **`:=`** creates a fixed name once. **`<-`** creates or updates a changeable name.  
+2. **`when`** always needs a condition before `{`.  
+3. **`stop` / `next`** only work inside `loop` / `repeat` (`bail` / `skip` are the same).  
+4. **`and` / `or` / `not`** work like `&&` / `||` / `!`.  
+5. **User input to math:** `try_num(...)` then check for `nil`.  
+6. Keywords such as `from`, `to`, `by`, `new` cannot be parameter names.
+
+---
+
+## Quick examples
 
 ```vela
 name := "Vela";
 count <- 0;
 count <- count + 1;
-
-add(a, b) ==> a + b;
-print(add(2, 3));
-
-when count > 0 {
-    say("count is", count);
-}
+print(name, count);
 ```
-
-Safe number input:
 
 ```vela
-n := try_num(ask("Number: "));
-when n == nil {
-    print("not a number");
-}
-else {
-    print("double =", n * 2);
-}
+add(a, b) ==> a + b;
+print(add(2, 3));
+print(3 |> add(4));
 ```
-
----
-
-## Running programs
-
-| Command | Meaning |
-|---------|---------|
-| `./vela` | Start the REPL |
-| `./vela file.vel` | Run a script |
-| `./vela --tokens file.vel` | Dump lexer tokens |
-| `./vela --version` | Print version |
-| `./vela --help` | Show help |
-
-REPL helpers: `.help`, `.vars`, `.type <expr>`, `.load <file>`, `.clear`, `exit`
-
----
-
-## Language overview
-
-### Bindings
-
-| Syntax | Meaning |
-|--------|---------|
-| `x := value` | Create once (immutable) |
-| `x <- value` | Create or update (mutable) |
-| `x += 1` | Compound update (mutable only) |
-
-### Control flow
 
 ```vela
 x := 5;
-when x > 0 { print("positive"); }
-else when x < 0 { print("negative"); }
-else { print("zero"); }
+when x > 0 {
+    print("positive");
+}
+else {
+    print("not positive");
+}
 
-repeat i from 0 through 3 { print(i); }
-repeat item in [10, 20] { print(item); }
-repeat 3 times { print("tick"); }
-
-n <- 0;
-loop {
-    n <- n + 1;
-    when n == 2 { next; }
-    when n >= 3 { stop; }
+repeat i from 0 through 2 {
+    print(i);
 }
 ```
 
-### Functions
-
 ```vela
-square(n) ==> n * n;
-greet(who, greeting := "Hello") ==> {
-    print("${greeting}, ${who}!");
-};
-print(3 |> square);
+import "std/math.vel" as M;
+print(M.clamp(20, 0, 10));
 ```
 
-### Data
-
-- Arrays: `[1, 2, 3]`, index, slices  
-- Maps: `%{name: "Ada"}`  
-- Sets: `#{1, 2}`  
-- Records, enums, match, tuples, destructuring  
-- Modules: `import "path.vel"`
-
-### Readable forms
-
-| Write | Meaning |
-|-------|---------|
-| `and` / `or` / `not` | `&&` / `\|\|` / `!` |
-| `stop` / `next` | leave loop / next iteration |
-| `x is empty` | no content |
-| `x in list` | membership |
-| `ask` / `say` | input / output |
+```vela
+draw 200 by 200 {
+    paper(26, 26, 46);      // background as r,g,b
+    paint(233, 69, 96);     // fill color
+    no_edge();
+    circle(100, 100, 80);
+}
+print(save_art("hello.bmp"));
+```
 
 ---
 
-## Standard modules (`std/`)
+## Running Vela
 
-```vela
-import "std/str.vel" as S;
-import "std/list.vel" as L;
-import "std/math.vel" as M;
-import "std/util.vel" as U;
+| Command | Meaning |
+|---------|---------|
+| `./vela` | REPL |
+| `./vela file.vel` | Run a program |
+| `./vela --tokens file.vel` | Dump tokens |
+| `./vela --version` | Version |
+| `./vela --help` | Help |
 
-print(S.upper("vela"));
-print(L.take([1, 2, 3, 4], 2));
-print(M.clamp(15, 0, 10));
-print(U.default(nil, 42));
-```
+REPL: `.help` · `.vars` · `.type <expr>` · `.load <file>` · `.clear` · `exit`
 
-| Module | Role |
-|--------|------|
-| `std/str.vel` | upper, lower, pad, strip, starts/ends, replace_all, … |
-| `std/list.vel` | head, tail, last, take, drop, uniq, flat, … |
-| `std/math.vel` | clamp, sign, lerp, in_range, even/odd, … |
-| `std/util.vel` | default, coalesce, repeat_val, identity |
-| `std/map.vel` | get, put, keys/values helpers |
-| `std/set.vel` | add, remove, union/intersect/difference |
-| `std/json.vel` | parse, stringify |
-| `std/io.vel` | read, write, append, exists, list, remove |
-| `std/range.vel` | ints, ints_by |
-| `std/text.vel` | lines, words, count_char |
-| `std/time.vel` | now_sec, sleep_sec, sleep_ms |
-| `std/check.vel` | assert_true, assert_eq, assert_nil |
-| `std/path.vel` | join2, basename, dirname, extension |
+---
 
-## Examples
+## Feature map
 
-The `examples/` folder exercises the language surface.  
-Full matrix: `./vela examples/45_full_language_audit.vel` (prints `FULL_AUDIT_OK`).
+| Area | Highlights |
+|------|------------|
+| Data | arrays, maps `%{}`, sets `#{}`, strings, numbers |
+| Control | `when`, `loop`, `repeat`, `until`, `unless`, `match` |
+| Functions | `name(params) ==> body`, defaults, pipe `\|>` |
+| Modules | `import "path" as Name` |
+| Std | `std/str`, `list`, `math`, `check`, `art`, … |
+| Art | `canvas`, shapes, `noise`, `save_art` → BMP/PPM |
+
+---
+
+## Examples folder
+
+Numbered programs under `examples/` exercise the language.  
+Broad check: `./vela examples/45_full_language_audit.vel`  
+Art: `examples/70_art_hello.vel` … `76_art_bars.vel`
 
 ---
 
@@ -187,13 +110,11 @@ Full matrix: `./vela examples/45_full_language_audit.vel` (prints `FULL_AUDIT_OK
 
 | Path | Role |
 |------|------|
-| `vela.cpp` | Interpreter (lexer, parser, runtime, REPL) |
-| `Makefile` | `make` → build `vela` |
+| `vela.cpp` | Interpreter (lexer, parser, runtime, art, REPL) |
+| `Makefile` | `make` builds `./vela` |
+| `TUTORIAL.md` | Full language tutorial |
 | `examples/` | Sample programs |
-| `std/` | Optional standard modules |
-| `explain.md` | Deeper language explanation |
-| `SPEC.md` | Working behavior notes |
-| `ROADMAP.md` | Honest status and open work |
+| `std/` | Standard modules |
 
 ---
 

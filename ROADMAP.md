@@ -4,6 +4,8 @@ Vela is an **interpreted** language with a C++17 tree-walking implementation, RE
 
 ## Working today
 
+- **Visual art:** `canvas`, shapes, `save_art` → BMP/PPM
+
 - Distinct syntax and full interpreter (`./vela`, `./vela file.vel`)
 - Bindings (`:=` / `<-`), control flow, functions, data structures
 - Match, records, enums, modules, readable aliases (`and`/`or`/`stop`/`next`/…)

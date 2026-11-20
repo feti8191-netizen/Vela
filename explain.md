@@ -1,9 +1,8 @@
 # Vela — Language Explanation
 
-Vela is an **interpreted** language: you run programs with `./vela file.vel` or the REPL. There is no compile-to-binary step in the language design.
+Vela is an **interpreted** general-purpose language. You run programs with `./vela file.vel` or the REPL. There is no compile-to-binary step.
 
-
-Vela is a general-purpose programming language built around a few clear ideas: explicit binding, explicit mutation, explicit function bodies, and a syntax that does not copy mainstream scripting languages. This document explains the language itself.
+This document explains how the language behaves. For a step-by-step learning path (tokens, rules, full feature walkthrough), use **[TUTORIAL.md](TUTORIAL.md)**.
 
 ---
 
@@ -267,14 +266,9 @@ work() ==> {
 ## Modules
 
 ```vela
-// utils_mod.vel
-VERSION := "1.0";
-double(x) ==> x * 2;
-
-// main
-import "utils_mod.vel" as u;
-print(u.VERSION);
-print(u.double(21));
+import "std/math.vel" as M;
+print(M.clamp(20, 0, 10));
+print(M.even(4));
 ```
 
 Imports resolve relative to the importing file’s directory and are cached.
@@ -393,8 +387,9 @@ repeat [k, v] in %{a: 1, b: 2} {
 Return a tuple and destructure:
 
 ```vela
-pair() ==> -> (1, 2);
-[a, b] := pair();
+pair() ==> [1, 2];
+p := pair();
+print(p[0], p[1]);
 ```
 
 
@@ -410,7 +405,26 @@ Only listed names are bound. Missing names are a runtime error.
 ## Set operations
 
 ```vela
-union(#{1,2}, #{2,3})
-intersect(#{1,2}, #{2,3})
-difference(#{1,2}, #{2,3})
+print(set_union(#{1,2}, #{2,3}));
+print(set_intersect(#{1,2}, #{2,3}));
+print(set_difference(#{1,2}, #{2,3}));
 ```
+
+---
+
+## Visual art
+
+Vela includes an off-screen canvas. Draw with style commands, then save a bitmap.
+
+```vela
+canvas(200, 200);
+ground("#111111");
+ink("#ff6688");
+no_edge();
+circle(100, 100, 60);
+print(save_art("dot.bmp"));
+```
+
+- `circle` size is diameter.
+- `save_art` writes **BMP** (or **PPM** if the path ends in `.ppm`).
+- Helpers: `std/art.vel` (`blob`, `star`, `ngon`, …).
