@@ -1,0 +1,17 @@
+import "std/fmt.vel" as F;
+import "std/bag.vel" as Bag;
+import "std/check.vel" as C;
+
+C.assert_eq(F.num_pad(7, 3), "007");
+C.assert_eq(F.bracket("x"), "[x]");
+C.assert_eq(F.repeat_str("ab", 3), "ababab");
+C.assert_true(contains(F.map_line(%{a: 1, b: 2}), "a=1"));
+
+b := Bag.empty();
+Bag.add(b, "apple");
+Bag.add(b, "apple");
+Bag.add(b, "pear", 3);
+C.assert_eq(Bag.count_of(b, "apple"), 2);
+C.assert_eq(Bag.count_of(b, "pear"), 3);
+C.assert_eq(Bag.size(b), 5);
+print("fmt_bag_ok");

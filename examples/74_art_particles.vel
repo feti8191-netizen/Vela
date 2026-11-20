@@ -1,0 +1,13 @@
+import "std/art.vel" as A;
+
+canvas(400, 400);
+ground("#0a0a12");
+palette := ["#e94560", "#0fbcf9", "#f9ca24", "#a55eea", "#20bf6b"];
+
+repeat i from 1 through 120 {
+    x := random() * 400;
+    y := random() * 400;
+    r := 4 + random() * 28;
+    A.blob(x, y, r, palette[floor(random() * 5)]);
+}
+print(save_art("art_particles.bmp"));

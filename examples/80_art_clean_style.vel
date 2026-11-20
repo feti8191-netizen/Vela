@@ -1,0 +1,16 @@
+draw 360 by 240 {
+    paper(15, 15, 25);
+
+    paint(233, 69, 96);
+    no_edge();
+    circle(120, 120, 100);
+
+    paint(15, 188, 249);
+    box(220, 60, 100, 120);
+
+    edge(255, 255, 255);
+    edge_w(2);
+    no_ink();
+    circle(120, 120, 120);
+}
+print(save_art("art_clean.bmp"));

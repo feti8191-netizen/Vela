@@ -1,0 +1,14 @@
+import "std/art.vel" as A;
+
+canvas(400, 300);
+A.checker(40, "#1a1a2e", "#16213e");
+vals := [50, 120, 80, 200, 150, 90];
+x <- 30;
+repeat v in vals {
+    A.bar(x, 40, v, "#e94560");
+    x <- x + 60;
+}
+ink("#eaeaea");
+no_edge();
+A.star(320, 80, 36, 16, 5);
+print(save_art("art_checker_bars.bmp"));

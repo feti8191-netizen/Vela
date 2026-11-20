@@ -1,0 +1,12 @@
+canvas(500, 500);
+ground("#050505");
+no_edge();
+ink("#00d2ff");
+a <- 0;
+repeat i from 0 through 200 {
+    x := 250 + cos(a) * (i * 0.9);
+    y := 250 + sin(a) * (i * 0.9);
+    circle(x, y, 6);
+    a <- a + 0.25;
+}
+print(save_art("art_spiral.bmp"));

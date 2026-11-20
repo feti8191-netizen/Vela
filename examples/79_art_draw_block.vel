@@ -1,0 +1,18 @@
+// Beautiful Vela-style drawing block
+draw 320 by 240 {
+    paper(26, 26, 46);           // r,g,b — clear background
+    paint(233, 69, 96);          // fill color as numbers
+    no_edge();
+    circle(160, 120, 90);
+
+    edge(255, 255, 255);
+    edge_w(3);
+    no_ink();
+    circle(160, 120, 110);
+
+    paint(rgb(15, 188, 249));    // or rgb() helper
+    no_edge();
+    box(20, 20, 60, 40);
+}
+
+print(save_art("art_draw_block.bmp"));

@@ -1,0 +1,10 @@
+canvas(400, 120);
+gradient_h("#ff6b6b", "#4ecdc4");
+ink("#ffffff");
+no_edge();
+// read a pixel near left and near right
+left := art_get_pixel(5, 60);
+right := art_get_pixel(395, 60);
+print("left", left);
+print("right", right);
+print(save_art("art_grad_h.bmp"));

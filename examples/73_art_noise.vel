@@ -1,0 +1,9 @@
+canvas(256, 256);
+repeat y from 0 through 255 {
+    repeat x from 0 through 255 {
+        n := noise(x * 0.05, y * 0.05);
+        g := floor(n * 255);
+        art_pixel(x, y, [g, g, floor(g * 0.9)]);
+    }
+}
+print(save_art("art_noise.bmp"));

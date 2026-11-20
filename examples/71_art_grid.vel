@@ -1,0 +1,11 @@
+canvas(400, 400);
+ground("#0d0d0d");
+repeat row from 0 through 7 {
+    repeat col from 0 through 7 {
+        when (row + col) % 2 == 0 { ink("#eaeaea"); }
+        else { ink("#222222"); }
+        no_edge();
+        box(col * 50, row * 50, 50, 50);
+    }
+}
+print(save_art("art_grid.bmp"));

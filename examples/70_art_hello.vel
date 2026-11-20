@@ -1,0 +1,11 @@
+canvas(300, 300);
+ground("#1a1a2e");
+ink("#e94560");
+no_edge();
+circle(150, 150, 100);
+edge("#ffffff");
+edge_w(3);
+no_ink();
+circle(150, 150, 120);
+path := save_art("art_hello.bmp");
+print("saved", path);

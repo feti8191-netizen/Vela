@@ -1,0 +1,13 @@
+canvas(400, 240);
+ground("#111");
+vals := [40, 80, 55, 120, 90, 150, 70];
+w := 40;
+gap := 12;
+x <- 20;
+repeat v in vals {
+    ink("#3d5a80");
+    no_edge();
+    box(x, 220 - v, w, v);
+    x <- x + w + gap;
+}
+print(save_art("art_bars.bmp"));
